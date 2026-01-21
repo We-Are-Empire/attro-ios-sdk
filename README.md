@@ -1,6 +1,6 @@
-# RideDeskSDK
+# AttroSDK
 
-A lightweight Swift Package for integrating RideDesk affiliate tracking into iOS apps.
+A lightweight Swift Package for integrating Attro affiliate tracking into iOS apps.
 
 ## Features
 
@@ -18,17 +18,17 @@ A lightweight Swift Package for integrating RideDesk affiliate tracking into iOS
 
 ### Swift Package Manager
 
-Add RideDeskSDK to your project via Xcode:
+Add AttroSDK to your project via Xcode:
 
 1. File → Add Package Dependencies
-2. Enter the repository URL: `https://github.com/We-Are-Empire/ridedesk-ios-sdk`
+2. Enter the repository URL: `https://github.com/We-Are-Empire/attro-ios-sdk`
 3. Select version and add to your target
 
 Or add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/We-Are-Empire/ridedesk-ios-sdk", from: "1.0.0")
+    .package(url: "https://github.com/We-Are-Empire/attro-ios-sdk", from: "1.0.0")
 ]
 ```
 
@@ -36,15 +36,15 @@ dependencies: [
 
 ### 1. Configure the SDK
 
-Configure RideDesk on app launch:
+Configure Attro on app launch:
 
 ```swift
-import RideDeskSDK
+import AttroSDK
 
 @main
 struct MyApp: App {
     init() {
-        RideDesk.configure(organizationSlug: "ride-ios")
+        Attro.configure(organizationSlug: "ride-ios")
     }
 
     var body: some Scene {
@@ -61,11 +61,11 @@ Check for attribution on first app launch:
 
 ```swift
 Task {
-    if let attribution = try await RideDesk.checkAttribution() {
+    if let attribution = try await Attro.checkAttribution() {
         print("Attributed to affiliate: \(attribution.affiliateId)")
 
         // If using RevenueCat, set attributes
-        RideDesk.applyToRevenueCat(attribution)
+        Attro.applyToRevenueCat(attribution)
     }
 }
 ```
@@ -76,9 +76,9 @@ Parse attribution from Universal Links:
 
 ```swift
 .onOpenURL { url in
-    if let attribution = RideDesk.parseUniversalLink(url) {
-        RideDesk.storeAttribution(attribution)
-        RideDesk.applyToRevenueCat(attribution)
+    if let attribution = Attro.parseUniversalLink(url) {
+        Attro.storeAttribution(attribution)
+        Attro.applyToRevenueCat(attribution)
     }
 }
 ```
@@ -88,7 +88,7 @@ Parse attribution from Universal Links:
 Get a user's referral link and stats:
 
 ```swift
-let referral = try await RideDesk.getMyReferral(userId: currentUser.id)
+let referral = try await Attro.getMyReferral(userId: currentUser.id)
 
 // Display stats
 print("Clicks: \(referral.stats.clicks)")
@@ -103,12 +103,12 @@ let url = referral.trackingLink.url
 
 ```swift
 import SwiftUI
-import RideDeskSDK
+import AttroSDK
 
 @main
 struct RideApp: App {
     init() {
-        RideDesk.configure(organizationSlug: "ride-ios")
+        Attro.configure(organizationSlug: "ride-ios")
     }
 
     var body: some Scene {
@@ -124,16 +124,16 @@ struct RideApp: App {
     }
 
     private func handleUniversalLink(_ url: URL) {
-        if let attribution = RideDesk.parseUniversalLink(url) {
-            RideDesk.storeAttribution(attribution)
-            RideDesk.applyToRevenueCat(attribution)
+        if let attribution = Attro.parseUniversalLink(url) {
+            Attro.storeAttribution(attribution)
+            Attro.applyToRevenueCat(attribution)
         }
     }
 
     private func checkAttribution() async {
         do {
-            if let attribution = try await RideDesk.checkAttribution() {
-                RideDesk.applyToRevenueCat(attribution)
+            if let attribution = try await Attro.checkAttribution() {
+                Attro.applyToRevenueCat(attribution)
             }
         } catch {
             print("Attribution check failed: \(error)")
@@ -174,7 +174,7 @@ struct ReferralView: View {
             }
         }
         .task {
-            referral = try? await RideDesk.getMyReferral(userId: userId)
+            referral = try? await Attro.getMyReferral(userId: userId)
         }
     }
 }
@@ -197,15 +197,15 @@ struct StatView: View {
 
 ## RevenueCat Integration
 
-If you're using RevenueCat, RideDeskSDK can automatically set subscriber attributes:
+If you're using RevenueCat, AttroSDK can automatically set subscriber attributes:
 
 ```swift
-import RideDeskSDK
+import AttroSDK
 import RevenueCat
 
 // After getting attribution
-if let attribution = try await RideDesk.checkAttribution() {
-    RideDesk.applyToRevenueCat(attribution)
+if let attribution = try await Attro.checkAttribution() {
+    Attro.applyToRevenueCat(attribution)
 }
 ```
 
@@ -223,7 +223,7 @@ To receive Universal Links, configure your app:
 
 1. **Add Associated Domains** in your app's entitlements:
    ```
-   applinks:ridedesk.vercel.app
+   applinks:get-attro.com
    ```
 
 2. **Handle incoming URLs** using SwiftUI's `onOpenURL` or UIKit's scene delegate
@@ -234,18 +234,18 @@ To receive Universal Links, configure your app:
 
 ```swift
 // Basic configuration
-RideDesk.configure(organizationSlug: "your-org")
+Attro.configure(organizationSlug: "your-org")
 
 // With custom base URL (for staging)
-RideDesk.configure(
+Attro.configure(
     organizationSlug: "your-org",
-    baseURL: URL(string: "https://staging.ridedesk.app")!
+    baseURL: URL(string: "https://staging.get-attro.com")!
 )
 
 // Full configuration
-RideDesk.configure(Configuration(
+Attro.configure(Configuration(
     organizationSlug: "your-org",
-    baseURL: URL(string: "https://ridedesk.vercel.app")!,
+    baseURL: URL(string: "https://get-attro.com")!,
     allowedHosts: ["custom.domain.com"]
 ))
 ```
@@ -254,26 +254,26 @@ RideDesk.configure(Configuration(
 
 ```swift
 // Check deferred attribution (call once on first launch)
-let attribution = try await RideDesk.checkAttribution()
+let attribution = try await Attro.checkAttribution()
 
 // Parse Universal Link
-let attribution = RideDesk.parseUniversalLink(url)
+let attribution = Attro.parseUniversalLink(url)
 
-// Check if URL is a RideDesk link
-let isRideDeskLink = RideDesk.isRideDeskLink(url)
+// Check if URL is an Attro link
+let isAttroLink = Attro.isAttroLink(url)
 
 // Store attribution for later use
-RideDesk.storeAttribution(attribution)
+Attro.storeAttribution(attribution)
 
 // Get stored attribution
-let stored = await RideDesk.getStoredAttribution()
+let stored = await Attro.getStoredAttribution()
 ```
 
 ### Referrals
 
 ```swift
 // Get referral info for a user
-let referral = try await RideDesk.getMyReferral(userId: "user-uuid")
+let referral = try await Attro.getMyReferral(userId: "user-uuid")
 
 // Access referral data
 referral.trackingLink.url      // Shareable URL
@@ -287,19 +287,19 @@ referral.shareContent          // Pre-formatted share content
 
 ```swift
 // Apply attribution to RevenueCat
-RideDesk.applyToRevenueCat(attribution)
+Attro.applyToRevenueCat(attribution)
 ```
 
 ## Error Handling
 
 ```swift
 do {
-    let referral = try await RideDesk.getMyReferral(userId: userId)
-} catch RideDeskError.notConfigured {
-    print("Call RideDesk.configure() first")
-} catch RideDeskError.serverError(let code, let message) {
+    let referral = try await Attro.getMyReferral(userId: userId)
+} catch AttroError.notConfigured {
+    print("Call Attro.configure() first")
+} catch AttroError.serverError(let code, let message) {
     print("Server error \(code): \(message ?? "Unknown")")
-} catch RideDeskError.networkError(let error) {
+} catch AttroError.networkError(let error) {
     print("Network error: \(error)")
 }
 ```
@@ -309,7 +309,7 @@ do {
 For testing, you can reset the SDK state:
 
 ```swift
-await RideDesk.reset()
+await Attro.reset()
 ```
 
 ## License

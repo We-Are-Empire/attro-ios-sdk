@@ -1,20 +1,20 @@
 import Foundation
 
-/// Parser for RideDesk Universal Links
+/// Parser for Attro Universal Links
 enum URLParser {
 
-    /// Known RideDesk hosts
+    /// Known Attro hosts
     private static let knownHosts = [
-        "ridedesk.vercel.app",
-        "ridedesk.app",
-        "www.ridedesk.app"
+        "get-attro.com",
+        "get-attro.com",
+        "www.get-attro.com"
     ]
 
     /// Parse a Universal Link URL into Attribution data
     ///
     /// Supported URL formats:
-    /// - `https://ridedesk.vercel.app/r/{code}?click={id}&aff={id}&offer={id}&org={id}`
-    /// - `https://ridedesk.vercel.app/app/track?click={id}&aff={id}&offer={id}&org={id}&code={code}`
+    /// - `https://get-attro.com/r/{code}?click={id}&aff={id}&offer={id}&org={id}`
+    /// - `https://get-attro.com/app/track?click={id}&aff={id}&offer={id}&org={id}&code={code}`
     ///
     /// - Parameter url: The Universal Link URL to parse
     /// - Parameter allowedHosts: Additional hosts to allow (for custom domains)
@@ -77,8 +77,8 @@ enum URLParser {
         return nil
     }
 
-    /// Check if a URL is a RideDesk Universal Link
-    static func isRideDeskLink(_ url: URL, allowedHosts: [String] = []) -> Bool {
+    /// Check if a URL is an Attro Universal Link
+    static func isAttroLink(_ url: URL, allowedHosts: [String] = []) -> Bool {
         guard let host = url.host else { return false }
 
         let isKnownHost = knownHosts.contains(host) || allowedHosts.contains(host)

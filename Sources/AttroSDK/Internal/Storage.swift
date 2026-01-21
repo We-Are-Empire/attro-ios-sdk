@@ -1,9 +1,9 @@
 import Foundation
 
-/// Thread-safe storage for RideDesk data
-actor RideDeskStorage {
+/// Thread-safe storage for Attro data
+actor AttroStorage {
     private let defaults: UserDefaults
-    private let prefix = "com.ridedesk.sdk."
+    private let prefix = "com.attro.sdk."
 
     private enum Keys {
         static let attributionChecked = "attributionChecked"

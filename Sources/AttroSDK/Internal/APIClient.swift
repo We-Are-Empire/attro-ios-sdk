@@ -1,6 +1,6 @@
 import Foundation
 
-/// Internal HTTP client for RideDesk API calls
+/// Internal HTTP client for Attro API calls
 actor APIClient {
     private let baseURL: URL
     private let session: URLSession
@@ -28,14 +28,14 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("RideDeskSDK/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("AttroSDK/1.0", forHTTPHeaderField: "User-Agent")
         request.httpBody = try encoder.encode(body)
 
         let (data, response) = try await performRequest(request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw RideDeskError.networkError(
-                NSError(domain: "RideDeskSDK", code: -1, userInfo: [
+            throw AttroError.networkError(
+                NSError(domain: "AttroSDK", code: -1, userInfo: [
                     NSLocalizedDescriptionKey: "Invalid response type"
                 ])
             )
@@ -43,7 +43,7 @@ actor APIClient {
 
         guard 200..<300 ~= httpResponse.statusCode else {
             let message = try? decoder.decode(APIErrorResponse.self, from: data).error
-            throw RideDeskError.serverError(
+            throw AttroError.serverError(
                 statusCode: httpResponse.statusCode,
                 message: message
             )
@@ -52,7 +52,7 @@ actor APIClient {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
-            throw RideDeskError.decodingError(error)
+            throw AttroError.decodingError(error)
         }
     }
 
@@ -61,13 +61,13 @@ actor APIClient {
         let url = baseURL.appendingPathComponent(path)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue("RideDeskSDK/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("AttroSDK/1.0", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await performRequest(request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw RideDeskError.networkError(
-                NSError(domain: "RideDeskSDK", code: -1, userInfo: [
+            throw AttroError.networkError(
+                NSError(domain: "AttroSDK", code: -1, userInfo: [
                     NSLocalizedDescriptionKey: "Invalid response type"
                 ])
             )
@@ -75,7 +75,7 @@ actor APIClient {
 
         guard 200..<300 ~= httpResponse.statusCode else {
             let message = try? decoder.decode(APIErrorResponse.self, from: data).error
-            throw RideDeskError.serverError(
+            throw AttroError.serverError(
                 statusCode: httpResponse.statusCode,
                 message: message
             )
@@ -84,7 +84,7 @@ actor APIClient {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
-            throw RideDeskError.decodingError(error)
+            throw AttroError.decodingError(error)
         }
     }
 
@@ -92,7 +92,7 @@ actor APIClient {
         do {
             return try await session.data(for: request)
         } catch {
-            throw RideDeskError.networkError(error)
+            throw AttroError.networkError(error)
         }
     }
 }

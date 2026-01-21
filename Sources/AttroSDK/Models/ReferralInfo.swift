@@ -42,7 +42,7 @@ public struct ReferralInfo: Codable, Sendable {
         /// Short tracking code (e.g., "abc12345")
         public let code: String
 
-        /// Full URL for sharing (e.g., "https://ridedesk.vercel.app/r/abc12345")
+        /// Full URL for sharing (e.g., "https://get-attro.com/r/abc12345")
         public let url: String
 
         /// Associated offer (optional)

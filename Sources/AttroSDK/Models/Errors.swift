@@ -1,11 +1,11 @@
 import Foundation
 
-/// Errors that can occur when using the RideDesk SDK
-public enum RideDeskError: Error, LocalizedError, Sendable {
-    /// SDK has not been configured. Call `RideDesk.configure()` first.
+/// Errors that can occur when using the Attro SDK
+public enum AttroError: Error, LocalizedError, Sendable {
+    /// SDK has not been configured. Call `Attro.configure()` first.
     case notConfigured
 
-    /// The provided URL is not a valid RideDesk Universal Link
+    /// The provided URL is not a valid Attro Universal Link
     case invalidUniversalLink
 
     /// Network request failed
@@ -26,9 +26,9 @@ public enum RideDeskError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "RideDesk SDK has not been configured. Call RideDesk.configure() first."
+            return "Attro SDK has not been configured. Call Attro.configure() first."
         case .invalidUniversalLink:
-            return "The URL is not a valid RideDesk Universal Link."
+            return "The URL is not a valid Attro Universal Link."
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .serverError(let code, let message):

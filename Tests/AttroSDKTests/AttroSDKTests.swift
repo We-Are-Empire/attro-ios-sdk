@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import RideDeskSDK
+@testable import AttroSDK
 
 // MARK: - URL Parser Tests
 
@@ -9,7 +9,7 @@ struct URLParserTests {
 
     @Test("Parses valid Universal Link with all parameters")
     func parseValidUniversalLink() {
-        let url = URL(string: "https://ridedesk.vercel.app/app/track?click=click-123&aff=aff-456&offer=offer-789&org=org-000&code=abc12345")!
+        let url = URL(string: "https://get-attro.com/app/track?click=click-123&aff=aff-456&offer=offer-789&org=org-000&code=abc12345")!
 
         let attribution = URLParser.parse(url)
 
@@ -24,7 +24,7 @@ struct URLParserTests {
 
     @Test("Parses tracking redirect URL with code in path")
     func parseTrackingRedirectURL() {
-        let url = URL(string: "https://ridedesk.vercel.app/r/abc12345?click=click-123&aff=aff-456&offer=offer-789&org=org-000")!
+        let url = URL(string: "https://get-attro.com/r/abc12345?click=click-123&aff=aff-456&offer=offer-789&org=org-000")!
 
         let attribution = URLParser.parse(url)
 
@@ -43,38 +43,38 @@ struct URLParserTests {
 
     @Test("Allows custom hosts when specified")
     func allowCustomHost() {
-        let url = URL(string: "https://custom.ridedesk.io/app/track?click=click-123&aff=aff-456&offer=offer-789&org=org-000&code=abc")!
+        let url = URL(string: "https://custom.attro.io/app/track?click=click-123&aff=aff-456&offer=offer-789&org=org-000&code=abc")!
 
-        let attribution = URLParser.parse(url, allowedHosts: ["custom.ridedesk.io"])
+        let attribution = URLParser.parse(url, allowedHosts: ["custom.attro.io"])
 
         #expect(attribution != nil)
     }
 
     @Test("Rejects URL with missing parameters")
     func rejectMissingParameters() {
-        let url = URL(string: "https://ridedesk.vercel.app/app/track?click=click-123")!
+        let url = URL(string: "https://get-attro.com/app/track?click=click-123")!
 
         let attribution = URLParser.parse(url)
 
         #expect(attribution == nil)
     }
 
-    @Test("isRideDeskLink returns true for valid links")
-    func isRideDeskLinkValid() {
-        let trackingURL = URL(string: "https://ridedesk.vercel.app/r/abc123")!
-        let appTrackURL = URL(string: "https://ridedesk.vercel.app/app/track")!
+    @Test("isAttroLink returns true for valid links")
+    func isAttroLinkValid() {
+        let trackingURL = URL(string: "https://get-attro.com/r/abc123")!
+        let appTrackURL = URL(string: "https://get-attro.com/app/track")!
 
-        #expect(URLParser.isRideDeskLink(trackingURL) == true)
-        #expect(URLParser.isRideDeskLink(appTrackURL) == true)
+        #expect(URLParser.isAttroLink(trackingURL) == true)
+        #expect(URLParser.isAttroLink(appTrackURL) == true)
     }
 
-    @Test("isRideDeskLink returns false for invalid links")
-    func isRideDeskLinkInvalid() {
-        let otherPath = URL(string: "https://ridedesk.vercel.app/dashboard")!
+    @Test("isAttroLink returns false for invalid links")
+    func isAttroLinkInvalid() {
+        let otherPath = URL(string: "https://get-attro.com/dashboard")!
         let otherHost = URL(string: "https://example.com/r/abc123")!
 
-        #expect(URLParser.isRideDeskLink(otherPath) == false)
-        #expect(URLParser.isRideDeskLink(otherHost) == false)
+        #expect(URLParser.isAttroLink(otherPath) == false)
+        #expect(URLParser.isAttroLink(otherHost) == false)
     }
 }
 
@@ -122,7 +122,7 @@ struct StorageTests {
 
     @Test("Storage stores and retrieves attribution")
     func storeAndRetrieveAttribution() async {
-        let storage = RideDeskStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
+        let storage = AttroStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
 
         let attribution = Attribution(
             clickId: "click-123",
@@ -141,7 +141,7 @@ struct StorageTests {
 
     @Test("Storage tracks attribution checked flag")
     func attributionCheckedFlag() async {
-        let storage = RideDeskStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
+        let storage = AttroStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
 
         #expect(await storage.attributionChecked == false)
 
@@ -152,7 +152,7 @@ struct StorageTests {
 
     @Test("Storage reset clears all data")
     func resetClearsData() async {
-        let storage = RideDeskStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
+        let storage = AttroStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
 
         await storage.setAttributionChecked(true)
         await storage.setStoredAttribution(Attribution(
@@ -179,20 +179,20 @@ struct ConfigurationTests {
 
     @Test("Configuration stores organization slug")
     func configurationStoresSlug() {
-        let config = RideDesk.Configuration(organizationSlug: "test-org")
+        let config = Attro.Configuration(organizationSlug: "test-org")
 
         #expect(config.organizationSlug == "test-org")
-        #expect(config.baseURL.absoluteString == "https://ridedesk.vercel.app")
+        #expect(config.baseURL.absoluteString == "https://get-attro.com")
     }
 
     @Test("Configuration allows custom base URL")
     func configurationCustomBaseURL() {
-        let config = RideDesk.Configuration(
+        let config = Attro.Configuration(
             organizationSlug: "test-org",
-            baseURL: URL(string: "https://staging.ridedesk.app")!
+            baseURL: URL(string: "https://staging.get-attro.com")!
         )
 
-        #expect(config.baseURL.absoluteString == "https://staging.ridedesk.app")
+        #expect(config.baseURL.absoluteString == "https://staging.get-attro.com")
     }
 }
 
@@ -214,7 +214,7 @@ struct ReferralInfoTests {
             "trackingLink": {
                 "id": "link-123",
                 "code": "abc12345",
-                "url": "https://ridedesk.vercel.app/r/abc12345",
+                "url": "https://get-attro.com/r/abc12345",
                 "offer": {
                     "id": "offer-123",
                     "name": "Ride Premium",
@@ -236,7 +236,7 @@ struct ReferralInfoTests {
             },
             "shareContent": {
                 "text": "Check out Ride!",
-                "url": "https://ridedesk.vercel.app/r/abc12345"
+                "url": "https://get-attro.com/r/abc12345"
             }
         }
         """.data(using: .utf8)!
@@ -257,15 +257,15 @@ struct ReferralInfoTests {
         let json = """
         {
             "affiliate": { "id": "a", "type": "internal", "status": "active", "createdAt": "2024-01-01" },
-            "trackingLink": { "id": "l", "code": "abc", "url": "https://ridedesk.vercel.app/r/abc" },
+            "trackingLink": { "id": "l", "code": "abc", "url": "https://get-attro.com/r/abc" },
             "stats": { "clicks": 0, "conversions": { "total": 0, "approved": 0, "pending": 0 }, "earnings": 0, "tokens": { "balance": 0, "lifetimeEarned": 0 } },
-            "shareContent": { "text": "Hi", "url": "https://ridedesk.vercel.app/r/abc" }
+            "shareContent": { "text": "Hi", "url": "https://get-attro.com/r/abc" }
         }
         """.data(using: .utf8)!
 
         let referralInfo = try JSONDecoder().decode(ReferralInfo.self, from: json)
 
-        #expect(referralInfo.referralURL?.absoluteString == "https://ridedesk.vercel.app/r/abc")
+        #expect(referralInfo.referralURL?.absoluteString == "https://get-attro.com/r/abc")
     }
 }
 
@@ -274,12 +274,12 @@ struct ReferralInfoTests {
 @Suite("Errors")
 struct ErrorTests {
 
-    @Test("RideDeskError has localized descriptions")
+    @Test("AttroError has localized descriptions")
     func errorDescriptions() {
-        let notConfigured = RideDeskError.notConfigured
-        let invalidLink = RideDeskError.invalidUniversalLink
-        let serverError = RideDeskError.serverError(statusCode: 500, message: "Internal error")
-        let serverErrorNoMessage = RideDeskError.serverError(statusCode: 404, message: nil)
+        let notConfigured = AttroError.notConfigured
+        let invalidLink = AttroError.invalidUniversalLink
+        let serverError = AttroError.serverError(statusCode: 500, message: "Internal error")
+        let serverErrorNoMessage = AttroError.serverError(statusCode: 404, message: nil)
 
         #expect(notConfigured.errorDescription?.contains("configured") == true)
         #expect(invalidLink.errorDescription?.contains("Universal Link") == true)

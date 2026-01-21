@@ -1,6 +1,6 @@
 import Foundation
 
-/// RideDesk SDK for iOS affiliate tracking
+/// Attro SDK for iOS affiliate tracking
 ///
 /// Use this SDK to:
 /// - Check for deferred attribution on first app launch
@@ -11,28 +11,28 @@ import Foundation
 ///
 /// ```swift
 /// // 1. Configure on app launch
-/// RideDesk.configure(organizationSlug: "ride-ios")
+/// Attro.configure(organizationSlug: "ride-ios")
 ///
 /// // 2. Check deferred attribution
-/// if let attribution = try await RideDesk.checkAttribution() {
-///     RideDesk.applyToRevenueCat(attribution)
+/// if let attribution = try await Attro.checkAttribution() {
+///     Attro.applyToRevenueCat(attribution)
 /// }
 ///
 /// // 3. Handle Universal Links
-/// if let attribution = RideDesk.parseUniversalLink(url) {
-///     RideDesk.storeAttribution(attribution)
-///     RideDesk.applyToRevenueCat(attribution)
+/// if let attribution = Attro.parseUniversalLink(url) {
+///     Attro.storeAttribution(attribution)
+///     Attro.applyToRevenueCat(attribution)
 /// }
 ///
 /// // 4. Get referral info for logged-in users
-/// let referral = try await RideDesk.getMyReferral(userId: user.id)
+/// let referral = try await Attro.getMyReferral(userId: user.id)
 /// ```
-public enum RideDesk {
+public enum Attro {
 
     // MARK: - Configuration
 
     private static var _config: Configuration?
-    private static let storage = RideDeskStorage()
+    private static let storage = AttroStorage()
     private static var apiClient: APIClient?
 
     /// SDK configuration
@@ -40,7 +40,7 @@ public enum RideDesk {
         /// Organization slug (e.g., "ride-ios")
         public let organizationSlug: String
 
-        /// Base URL for the RideDesk API
+        /// Base URL for the Attro API
         public let baseURL: URL
 
         /// Additional hosts to allow for Universal Links
@@ -48,7 +48,7 @@ public enum RideDesk {
 
         public init(
             organizationSlug: String,
-            baseURL: URL = URL(string: "https://ridedesk.vercel.app")!,
+            baseURL: URL = URL(string: "https://get-attro.com")!,
             allowedHosts: [String] = []
         ) {
             self.organizationSlug = organizationSlug
@@ -76,7 +76,7 @@ public enum RideDesk {
     /// - Parameter baseURL: Optional custom base URL (defaults to production)
     public static func configure(
         organizationSlug: String,
-        baseURL: URL = URL(string: "https://ridedesk.vercel.app")!
+        baseURL: URL = URL(string: "https://get-attro.com")!
     ) {
         configure(Configuration(organizationSlug: organizationSlug, baseURL: baseURL))
     }
@@ -93,17 +93,17 @@ public enum RideDesk {
     ///
     /// This method:
     /// 1. Collects device fingerprint information
-    /// 2. Calls the RideDesk API to check for a matching click
+    /// 2. Calls the Attro API to check for a matching click
     /// 3. Returns attribution data if a match is found
     ///
     /// Only runs once per install. Subsequent calls return nil without making API calls.
     ///
     /// - Returns: Attribution data if a match was found, nil otherwise
-    /// - Throws: `RideDeskError` if not configured or network error occurs
+    /// - Throws: `AttroError` if not configured or network error occurs
     @MainActor
     public static func checkAttribution() async throws -> Attribution? {
         guard apiClient != nil else {
-            throw RideDeskError.notConfigured
+            throw AttroError.notConfigured
         }
 
         // Check if already checked
@@ -162,13 +162,13 @@ public enum RideDesk {
         return URLParser.parse(url, allowedHosts: allowedHosts)
     }
 
-    /// Check if a URL is a RideDesk Universal Link
+    /// Check if a URL is an Attro Universal Link
     ///
     /// - Parameter url: The URL to check
-    /// - Returns: true if this is a RideDesk link that should be handled
-    public static func isRideDeskLink(_ url: URL) -> Bool {
+    /// - Returns: true if this is an Attro link that should be handled
+    public static func isAttroLink(_ url: URL) -> Bool {
         let allowedHosts = _config?.allowedHosts ?? []
-        return URLParser.isRideDeskLink(url, allowedHosts: allowedHosts)
+        return URLParser.isAttroLink(url, allowedHosts: allowedHosts)
     }
 
     // MARK: - Attribution Storage
@@ -201,13 +201,13 @@ public enum RideDesk {
     /// - Parameter userId: The user's Supabase user ID
     /// - Parameter orgSlug: Optional organization slug (uses configured default)
     /// - Returns: Complete referral information
-    /// - Throws: `RideDeskError` if not configured or request fails
+    /// - Throws: `AttroError` if not configured or request fails
     public static func getMyReferral(
         userId: String,
         orgSlug: String? = nil
     ) async throws -> ReferralInfo {
         guard let client = apiClient, let config = _config else {
-            throw RideDeskError.notConfigured
+            throw AttroError.notConfigured
         }
 
         let request = MyAffiliateRequest(

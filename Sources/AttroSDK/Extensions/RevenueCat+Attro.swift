@@ -3,7 +3,7 @@ import Foundation
 #if canImport(RevenueCat)
 import RevenueCat
 
-extension RideDesk {
+extension Attro {
 
     /// Apply attribution data to RevenueCat subscriber attributes
     ///
@@ -16,14 +16,14 @@ extension RideDesk {
     ///
     /// ```swift
     /// // After checking deferred attribution
-    /// if let attribution = try await RideDesk.checkAttribution() {
-    ///     RideDesk.applyToRevenueCat(attribution)
+    /// if let attribution = try await Attro.checkAttribution() {
+    ///     Attro.applyToRevenueCat(attribution)
     /// }
     ///
     /// // After parsing a Universal Link
-    /// if let attribution = RideDesk.parseUniversalLink(url) {
-    ///     RideDesk.storeAttribution(attribution)
-    ///     RideDesk.applyToRevenueCat(attribution)
+    /// if let attribution = Attro.parseUniversalLink(url) {
+    ///     Attro.storeAttribution(attribution)
+    ///     Attro.applyToRevenueCat(attribution)
     /// }
     /// ```
     public static func applyToRevenueCat(_ attribution: Attribution) {
@@ -55,7 +55,7 @@ extension RideDesk {
 
 // MARK: - Stub when RevenueCat is not available
 
-extension RideDesk {
+extension Attro {
 
     /// Apply attribution data to RevenueCat subscriber attributes
     ///

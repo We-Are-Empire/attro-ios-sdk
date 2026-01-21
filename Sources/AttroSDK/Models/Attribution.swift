@@ -14,7 +14,7 @@ public struct Attribution: Codable, Sendable, Equatable {
     /// ID of the offer being promoted
     public let offerId: String
 
-    /// ID of the organization (RideDesk tenant)
+    /// ID of the organization (Attro tenant)
     public let orgId: String
 
     /// Short tracking code from the link

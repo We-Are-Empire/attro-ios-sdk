@@ -1,31 +1,31 @@
 // swift-tools-version: 5.9
-// RideDeskSDK - Lightweight iOS SDK for RideDesk affiliate tracking
+// AttroSDK - Lightweight iOS SDK for Attro affiliate tracking
 
 import PackageDescription
 
 let package = Package(
-    name: "RideDeskSDK",
+    name: "AttroSDK",
     platforms: [
         .iOS(.v15),
         .macOS(.v12)
     ],
     products: [
         .library(
-            name: "RideDeskSDK",
-            targets: ["RideDeskSDK"]
+            name: "AttroSDK",
+            targets: ["AttroSDK"]
         ),
     ],
     dependencies: [],
     targets: [
         .target(
-            name: "RideDeskSDK",
+            name: "AttroSDK",
             dependencies: [],
-            path: "Sources/RideDeskSDK"
+            path: "Sources/AttroSDK"
         ),
         .testTarget(
-            name: "RideDeskSDKTests",
-            dependencies: ["RideDeskSDK"],
-            path: "Tests/RideDeskSDKTests"
+            name: "AttroSDKTests",
+            dependencies: ["AttroSDK"],
+            path: "Tests/AttroSDKTests"
         ),
     ]
 )
