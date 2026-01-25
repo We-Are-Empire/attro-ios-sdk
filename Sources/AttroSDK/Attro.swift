@@ -1,6 +1,6 @@
 import Foundation
 
-/// Attro SDK for iOS affiliate tracking
+/// Attro SDK for iOS affiliate tracking - v1.0
 ///
 /// Use this SDK to:
 /// - Check for deferred attribution on first app launch
