@@ -14,13 +14,27 @@ let package = Package(
             name: "AttroSDK",
             targets: ["AttroSDK"]
         ),
+        .library(
+            name: "AttroRevenueCat",
+            targets: ["AttroRevenueCat"]
+        ),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/RevenueCat/purchases-ios-spm.git", from: "5.0.0"),
+    ],
     targets: [
         .target(
             name: "AttroSDK",
             dependencies: [],
             path: "Sources/AttroSDK"
+        ),
+        .target(
+            name: "AttroRevenueCat",
+            dependencies: [
+                "AttroSDK",
+                .product(name: "RevenueCat", package: "purchases-ios-spm"),
+            ],
+            path: "Sources/AttroRevenueCat"
         ),
         .testTarget(
             name: "AttroSDKTests",

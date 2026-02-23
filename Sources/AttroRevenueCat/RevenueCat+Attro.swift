@@ -1,6 +1,5 @@
 import Foundation
-
-#if canImport(RevenueCat)
+import AttroSDK
 import RevenueCat
 
 extension Attro {
@@ -26,7 +25,7 @@ extension Attro {
     ///     Attro.applyToRevenueCat(attribution)
     /// }
     /// ```
-    public static func applyToRevenueCat(_ attribution: Attribution) {
+    public static func applyToRevenueCat(_ attribution: AttroSDK.Attribution) {
         let formatter = ISO8601DateFormatter()
         let now = formatter.string(from: Date())
 
@@ -50,23 +49,3 @@ extension Attro {
         }
     }
 }
-
-#else
-
-// MARK: - Stub when RevenueCat is not available
-
-extension Attro {
-
-    /// Apply attribution data to RevenueCat subscriber attributes
-    ///
-    /// > Note: This is a stub. Add the RevenueCat SDK to your project
-    /// > to enable this functionality.
-    ///
-    /// - Parameter attribution: The attribution data to apply
-    @available(*, unavailable, message: "Add RevenueCat SDK to use this method")
-    public static func applyToRevenueCat(_ attribution: Attribution) {
-        fatalError("RevenueCat SDK not available")
-    }
-}
-
-#endif
