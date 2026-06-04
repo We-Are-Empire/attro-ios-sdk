@@ -9,6 +9,7 @@ actor AttroStorage {
         static let attributionChecked = "attributionChecked"
         static let storedAttribution = "storedAttribution"
         static let configuredAt = "configuredAt"
+        static let pendingCheck = "pendingCheck"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -26,6 +27,20 @@ actor AttroStorage {
         defaults.set(value, forKey: prefix + Keys.attributionChecked)
     }
 
+    // MARK: - Pending Check Flag (offline durability)
+
+    /// Whether a previous attribution check failed transiently and must be
+    /// retried on the next launch. This is the durability mechanism for
+    /// retryable failures: it persists across app launches so a transient
+    /// network/5xx failure never permanently loses attribution.
+    var pendingCheck: Bool {
+        get { defaults.bool(forKey: prefix + Keys.pendingCheck) }
+    }
+
+    func setPendingCheck(_ value: Bool) {
+        defaults.set(value, forKey: prefix + Keys.pendingCheck)
+    }
+
     // MARK: - Stored Attribution
 
     /// Previously stored attribution data
@@ -38,9 +53,14 @@ actor AttroStorage {
         }
     }
 
-    func setStoredAttribution(_ attribution: Attribution?) {
+    /// Persist (or clear) the stored attribution.
+    ///
+    /// - Throws: if encoding the attribution fails. Callers that cannot
+    ///   meaningfully recover (the fire-and-forget path) should still surface
+    ///   the error via logging rather than dropping it silently.
+    func setStoredAttribution(_ attribution: Attribution?) throws {
         if let attribution = attribution {
-            let data = try? JSONEncoder().encode(attribution)
+            let data = try JSONEncoder().encode(attribution)
             defaults.set(data, forKey: prefix + Keys.storedAttribution)
         } else {
             defaults.removeObject(forKey: prefix + Keys.storedAttribution)
@@ -65,5 +85,6 @@ actor AttroStorage {
         defaults.removeObject(forKey: prefix + Keys.attributionChecked)
         defaults.removeObject(forKey: prefix + Keys.storedAttribution)
         defaults.removeObject(forKey: prefix + Keys.configuredAt)
+        defaults.removeObject(forKey: prefix + Keys.pendingCheck)
     }
 }

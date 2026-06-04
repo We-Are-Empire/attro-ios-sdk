@@ -31,9 +31,26 @@ public enum Attro {
 
     // MARK: - Configuration
 
-    private static var _config: Configuration?
     private static let storage = AttroStorage()
-    private static var apiClient: APIClient?
+
+    /// The shared configuration and API client are mutable global state that is
+    /// written by `configure()` and read from several isolation domains
+    /// (`@MainActor` for `checkAttribution`, non-isolated for
+    /// `parseUniversalLink`/`storeAttribution`). Guard every access behind a lock
+    /// so concurrent `configure()` / first-use never race on the raw statics —
+    /// which strict-concurrency builds flag and which could otherwise surface as
+    /// a transiently `nil` `apiClient`.
+    private static let stateLock = NSLock()
+    private nonisolated(unsafe) static var _config: Configuration?
+    private nonisolated(unsafe) static var _apiClient: APIClient?
+
+    /// Atomically read the current configuration and API client together so a
+    /// caller never observes a half-applied `configure()`.
+    private static func currentState() -> (config: Configuration?, client: APIClient?) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return (_config, _apiClient)
+    }
 
     /// SDK configuration
     public struct Configuration: Sendable {
@@ -63,8 +80,11 @@ public enum Attro {
     ///
     /// - Parameter configuration: SDK configuration
     public static func configure(_ configuration: Configuration) {
+        let client = APIClient(baseURL: configuration.baseURL)
+        stateLock.lock()
         _config = configuration
-        apiClient = APIClient(baseURL: configuration.baseURL)
+        _apiClient = client
+        stateLock.unlock()
         Task {
             await storage.setConfiguredAt(Date())
         }
@@ -82,33 +102,42 @@ public enum Attro {
     }
 
     /// Current configuration (nil if not configured)
-    public static var configuration: Configuration? { _config }
+    public static var configuration: Configuration? { currentState().config }
 
     /// Whether the SDK has been configured
-    public static var isConfigured: Bool { _config != nil }
+    public static var isConfigured: Bool { currentState().config != nil }
 
     // MARK: - Deferred Attribution
 
     /// Check for deferred attribution on first app launch
     ///
     /// This method:
-    /// 1. Collects device fingerprint information
-    /// 2. Calls the Attro API to check for a matching click
+    /// 1. Collects device fingerprint information (including the real device
+    ///    User-Agent so the backend can match on browser family, not IP alone)
+    /// 2. Calls the Attro API to check for a matching click, with bounded retry
+    ///    on transient failures
     /// 3. Returns attribution data if a match is found
     ///
-    /// Only runs once per install. Subsequent calls return nil without making API calls.
+    /// Only runs once per install for a *definitive* answer. If the check fails
+    /// transiently (offline / 5xx flagged `retryable`), the install is NOT marked
+    /// as checked: a durable pending-check flag is persisted so the next launch
+    /// retries instead of permanently losing attribution. Call this on every
+    /// launch — it is a no-op once a definitive answer has been recorded.
     ///
     /// - Returns: Attribution data if a match was found, nil otherwise
-    /// - Throws: `AttroError` if not configured or network error occurs
+    /// - Throws: `AttroError` if not configured or a (post-retry) network error
+    ///   occurs. A thrown retryable error means a retry is durably scheduled.
     @MainActor
     public static func checkAttribution() async throws -> Attribution? {
-        guard apiClient != nil else {
+        guard let client = currentState().client else {
             throw AttroError.notConfigured
         }
 
-        // Check if already checked
+        // A definitive answer was already recorded — return any stored
+        // attribution without another network call. A still-pending check (from
+        // a prior transient failure) does NOT short-circuit here, so it is
+        // retried on this launch.
         if await storage.attributionChecked {
-            // Return stored attribution if available
             return await storage.storedAttribution
         }
 
@@ -116,11 +145,28 @@ public enum Attro {
         let deviceInfo = DeviceInfo.current
         let request = MatchRequest(deviceInfo: deviceInfo)
 
-        // Call API
-        let response: MatchResponse = try await apiClient!.post("/api/ios/match", body: request)
+        // Call API, sending the real device User-Agent so the backend matcher
+        // can award browser-family confidence points instead of degrading to an
+        // IP-only match. The APIClient retries transient failures internally.
+        let response: MatchResponse
+        do {
+            response = try await client.post(
+                "/api/ios/match",
+                body: request,
+                userAgent: deviceInfo.userAgent
+            )
+        } catch let error as AttroError where error.isRetryable {
+            // Transient failure after exhausting in-process retries: do NOT mark
+            // as checked. Persist a pending-check flag so the next launch retries
+            // and attribution is not permanently lost.
+            await storage.setPendingCheck(true)
+            throw error
+        }
 
-        // Mark as checked
+        // Definitive answer received (match or genuine no-match): record it so we
+        // do not check again, and clear any pending-retry flag.
         await storage.setAttributionChecked(true)
+        await storage.setPendingCheck(false)
 
         // If matched, create and store attribution. A successful match must
         // carry a project id (either the `projectId` key or the legacy `orgId`
@@ -146,8 +192,14 @@ public enum Attro {
             matchMethod: matchMethod
         )
 
-        // Store for future reference
-        await storage.setStoredAttribution(attribution)
+        // Store for future reference. The encode is on a small, known-Codable
+        // value so a failure is not expected, but if it ever happens we surface
+        // it rather than silently returning attribution that was never persisted.
+        do {
+            try await storage.setStoredAttribution(attribution)
+        } catch {
+            AttroLog.error("Failed to persist matched attribution: \(error.localizedDescription)")
+        }
 
         return attribution
     }
@@ -161,7 +213,7 @@ public enum Attro {
     /// - Parameter url: The Universal Link URL
     /// - Returns: Attribution data if the URL is valid, nil otherwise
     public static func parseUniversalLink(_ url: URL) -> Attribution? {
-        let allowedHosts = _config?.allowedHosts ?? []
+        let allowedHosts = currentState().config?.allowedHosts ?? []
         return URLParser.parse(url, allowedHosts: allowedHosts)
     }
 
@@ -170,20 +222,47 @@ public enum Attro {
     /// - Parameter url: The URL to check
     /// - Returns: true if this is an Attro link that should be handled
     public static func isAttroLink(_ url: URL) -> Bool {
-        let allowedHosts = _config?.allowedHosts ?? []
+        let allowedHosts = currentState().config?.allowedHosts ?? []
         return URLParser.isAttroLink(url, allowedHosts: allowedHosts)
     }
 
     // MARK: - Attribution Storage
 
-    /// Store attribution data locally
+    /// Store attribution data locally, awaiting completion.
     ///
-    /// Use this to persist attribution from Universal Links for later use.
+    /// Prefer this variant when you intend to read the attribution back (e.g.
+    /// `applyStoredAttributionToRevenueCat()` / `getStoredAttribution()`) right
+    /// after storing it: awaiting guarantees the write has landed, so a
+    /// store-then-read sequence cannot observe a stale/nil value.
+    ///
+    /// - Parameter attribution: The attribution data to store
+    /// - Throws: `AttroError` if the attribution could not be persisted.
+    public static func storeAttribution(_ attribution: Attribution) async throws {
+        do {
+            try await storage.setStoredAttribution(attribution)
+        } catch {
+            throw AttroError.persistenceFailed(error)
+        }
+    }
+
+    /// Store attribution data locally (fire-and-forget).
+    ///
+    /// Use this to persist attribution from Universal Links for later use when
+    /// you do not need to read it back immediately. The write happens on a
+    /// detached task; unlike the previous implementation a failure is **not**
+    /// silently discarded — it is logged via the unified logging system
+    /// (`subsystem == "com.attro.sdk"`). If you need to read the attribution back
+    /// right after storing, use the `async throws` overload and `await` it
+    /// instead so you observe the write completing.
     ///
     /// - Parameter attribution: The attribution data to store
     public static func storeAttribution(_ attribution: Attribution) {
         Task {
-            await storage.setStoredAttribution(attribution)
+            do {
+                try await storage.setStoredAttribution(attribution)
+            } catch {
+                AttroLog.error("Failed to store attribution: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -209,7 +288,8 @@ public enum Attro {
         userId: String,
         orgSlug: String? = nil
     ) async throws -> ReferralInfo {
-        guard let client = apiClient, let config = _config else {
+        let state = currentState()
+        guard let client = state.client, let config = state.config else {
             throw AttroError.notConfigured
         }
 

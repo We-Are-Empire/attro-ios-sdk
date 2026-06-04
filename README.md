@@ -57,18 +57,32 @@ struct MyApp: App {
 
 ### 2. Check Deferred Attribution
 
-Check for attribution on first app launch:
+Call this on **every** launch (not just the first). It runs the network check only
+until a *definitive* answer is recorded; after that it is a cheap no-op that
+returns any stored attribution. If a check fails transiently (offline, or a 5xx
+the backend flags as retryable), the SDK retries in-process with backoff and, if
+that still fails, persists a durable pending-check flag so the **next launch
+retries** instead of permanently losing attribution.
 
 ```swift
 Task {
-    if let attribution = try await Attro.checkAttribution() {
-        print("Attributed to affiliate: \(attribution.affiliateId)")
+    do {
+        if let attribution = try await Attro.checkAttribution() {
+            print("Attributed to affiliate: \(attribution.affiliateId)")
 
-        // If using RevenueCat, set attributes
-        Attro.applyToRevenueCat(attribution)
+            // If using RevenueCat, set attributes
+            Attro.applyToRevenueCat(attribution)
+        }
+    } catch {
+        // A thrown retryable error means a retry is already scheduled for the
+        // next launch — safe to ignore here.
     }
 }
 ```
+
+> The deferred-match request sends the device's real Safari/WebKit User-Agent so
+> the backend can match on browser family. A static User-Agent would degrade
+> every match to IP-only, which no longer auto-attributes by default.
 
 ### 3. Handle Universal Links
 
@@ -197,13 +211,23 @@ struct StatView: View {
 
 ## RevenueCat Integration
 
-If you're using RevenueCat, AttroSDK can automatically set subscriber attributes:
+If you're using RevenueCat, AttroSDK can automatically set subscriber attributes.
+
+> **Ordering matters.** You must call `Purchases.configure(...)` **before**
+> `Attro.applyToRevenueCat(...)`. If RevenueCat is not yet configured,
+> `applyToRevenueCat` is a logged no-op (it returns `false`) rather than a crash,
+> so attribution is simply dropped. Configure RevenueCat at app launch — in the
+> same place you call `Attro.configure(...)`.
 
 ```swift
 import AttroSDK
 import RevenueCat
 
-// After getting attribution
+// 1. Configure RevenueCat first.
+Purchases.configure(withAPIKey: "appl_xxx")
+
+// 2. After getting attribution, apply it. Returns false (no-op) if RevenueCat
+//    was somehow not configured.
 if let attribution = try await Attro.checkAttribution() {
     Attro.applyToRevenueCat(attribution)
 }
@@ -213,7 +237,7 @@ This sets the following subscriber attributes:
 - `$rd_click_id`
 - `$rd_affiliate_id`
 - `$rd_offer_id`
-- `$rd_org_id`
+- `$rd_project_id` (and `$rd_org_id` transitionally, for older backends)
 - `$rd_tracking_code`
 - `$rd_attributed_at`
 
@@ -253,7 +277,10 @@ Attro.configure(Configuration(
 ### Attribution
 
 ```swift
-// Check deferred attribution (call once on first launch)
+// Check deferred attribution. Call this on EVERY launch — it performs the
+// network check only until a definitive matched/no-match answer is recorded,
+// then becomes a cheap no-op. A transient failure is retried on a later launch,
+// so it is not strictly "once per install".
 let attribution = try await Attro.checkAttribution()
 
 // Parse Universal Link
@@ -262,7 +289,12 @@ let attribution = Attro.parseUniversalLink(url)
 // Check if URL is an Attro link
 let isAttroLink = Attro.isAttroLink(url)
 
-// Store attribution for later use
+// Store attribution for later use. Prefer the awaitable variant when you read
+// it back immediately afterwards (e.g. applyStoredAttributionToRevenueCat):
+try await Attro.storeAttribution(attribution)
+
+// Fire-and-forget variant (write happens in the background; failures are logged
+// to the unified log under subsystem "com.attro.sdk", not silently dropped):
 Attro.storeAttribution(attribution)
 
 // Get stored attribution
@@ -297,8 +329,8 @@ do {
     let referral = try await Attro.getMyReferral(userId: userId)
 } catch AttroError.notConfigured {
     print("Call Attro.configure() first")
-} catch AttroError.serverError(let code, let message) {
-    print("Server error \(code): \(message ?? "Unknown")")
+} catch AttroError.serverError(let code, let message, let retryable) {
+    print("Server error \(code): \(message ?? "Unknown") (retryable: \(retryable))")
 } catch AttroError.networkError(let error) {
     print("Network error: \(error)")
 }

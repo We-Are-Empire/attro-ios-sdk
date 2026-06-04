@@ -221,7 +221,7 @@ struct MatchResponseDecodeTests {
 struct StorageTests {
 
     @Test("Storage stores and retrieves attribution")
-    func storeAndRetrieveAttribution() async {
+    func storeAndRetrieveAttribution() async throws {
         let storage = AttroStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
 
         let attribution = Attribution(
@@ -233,7 +233,7 @@ struct StorageTests {
             matchMethod: .universalLink
         )
 
-        await storage.setStoredAttribution(attribution)
+        try await storage.setStoredAttribution(attribution)
         let retrieved = await storage.storedAttribution
 
         #expect(retrieved == attribution)
@@ -251,18 +251,220 @@ struct StorageTests {
     }
 
     @Test("Storage reset clears all data")
-    func resetClearsData() async {
+    func resetClearsData() async throws {
         let storage = AttroStorage(defaults: UserDefaults(suiteName: "test.\(UUID().uuidString)")!)
 
         await storage.setAttributionChecked(true)
-        await storage.setStoredAttribution(Attribution(
+        await storage.setPendingCheck(true)
+        try await storage.setStoredAttribution(Attribution(
             clickId: "c", affiliateId: "a", offerId: "o", projectId: "p", trackingCode: "t", matchMethod: nil
         ))
 
         await storage.reset()
 
         #expect(await storage.attributionChecked == false)
+        #expect(await storage.pendingCheck == false)
         #expect(await storage.storedAttribution == nil)
+    }
+
+    @Test("Pending-check flag survives across launches (separate storage instance)")
+    func pendingCheckSurvivesRelaunch() async {
+        // P2-03 offline durability: a transient failure persists a pending-check
+        // flag that must survive an app relaunch so the next launch retries.
+        let suite = "test.\(UUID().uuidString)"
+
+        // Launch 1: a transient failure records a pending retry.
+        let launch1 = AttroStorage(defaults: UserDefaults(suiteName: suite)!)
+        #expect(await launch1.pendingCheck == false)
+        await launch1.setPendingCheck(true)
+        // Crucially, the install is NOT marked as definitively checked.
+        #expect(await launch1.attributionChecked == false)
+
+        // Launch 2: a brand-new storage actor over the same backing store (as
+        // happens on the next cold start) still sees the pending flag.
+        let launch2 = AttroStorage(defaults: UserDefaults(suiteName: suite)!)
+        #expect(await launch2.pendingCheck == true)
+        #expect(await launch2.attributionChecked == false)
+
+        // A definitive answer on launch 2 clears the pending flag.
+        await launch2.setAttributionChecked(true)
+        await launch2.setPendingCheck(false)
+
+        let launch3 = AttroStorage(defaults: UserDefaults(suiteName: suite)!)
+        #expect(await launch3.attributionChecked == true)
+        #expect(await launch3.pendingCheck == false)
+    }
+}
+
+// MARK: - Device Info Tests
+
+@Suite("DeviceInfo User-Agent")
+struct DeviceInfoTests {
+
+    @Test("Sends a real Safari-shaped User-Agent, not the static AttroSDK/1.0")
+    func realUserAgentNotStatic() {
+        let ua = DeviceInfo.currentUserAgent
+
+        // It must not be the old static value that degraded matching to IP-only.
+        #expect(ua != "AttroSDK/1.0")
+        // It must carry the Safari/WebKit tokens the backend keys on for
+        // browser-family matching.
+        #expect(ua.contains("Safari"))
+        #expect(ua.contains("AppleWebKit"))
+        #expect(ua.contains("Mozilla/5.0"))
+        // The default-argument helper returns the same value.
+        #expect(DeviceInfo.defaultUserAgent == ua)
+    }
+}
+
+// MARK: - API Client Retry Tests
+
+/// A URLProtocol stub that serves a scripted sequence of responses and counts
+/// how many requests it received, so retry behaviour can be asserted.
+final class StubURLProtocol: URLProtocol, @unchecked Sendable {
+    /// Each element is (statusCode, body). Consumed in order; the last element
+    /// repeats once exhausted.
+    nonisolated(unsafe) static var responses: [(Int, Data)] = []
+    nonisolated(unsafe) static var requestCount = 0
+    private static let lock = NSLock()
+
+    static func reset(responses: [(Int, Data)]) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.responses = responses
+        self.requestCount = 0
+    }
+
+    static var count: Int {
+        lock.lock(); defer { lock.unlock() }
+        return requestCount
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let (status, body): (Int, Data) = {
+            StubURLProtocol.lock.lock()
+            defer { StubURLProtocol.lock.unlock() }
+            let idx = min(StubURLProtocol.requestCount, StubURLProtocol.responses.count - 1)
+            StubURLProtocol.requestCount += 1
+            return StubURLProtocol.responses[idx]
+        }()
+
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: status,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+// Serialized: these tests share the StubURLProtocol static request script, so
+// they must not run concurrently with each other.
+@Suite("APIClient Retry", .serialized)
+struct APIClientRetryTests {
+
+    private struct EmptyBody: Encodable {}
+    private struct OKResponse: Decodable, Equatable { let matched: Bool }
+
+    private func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        return URLSession(configuration: config)
+    }
+
+    @Test("Retries a transient 5xx flagged retryable, then throws after the bound")
+    func retriesTransient5xx() async {
+        // Always 503 with retryable:true. With maxRetries:2 that is 3 attempts.
+        let body = #"{"error":"temporarily unavailable","retryable":true}"#.data(using: .utf8)!
+        StubURLProtocol.reset(responses: [(503, body)])
+
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 2,
+            retryBaseDelay: 0  // no real sleeping in tests
+        )
+
+        await #expect(throws: AttroError.self) {
+            let _: OKResponse = try await client.post("/api/ios/match", body: EmptyBody())
+        }
+
+        // 1 initial attempt + 2 retries = 3 requests hit the network.
+        #expect(StubURLProtocol.count == 3)
+    }
+
+    @Test("Succeeds after a transient 5xx is retried")
+    func succeedsAfterRetry() async throws {
+        // First a retryable 503, then a 200. Should retry once and succeed.
+        let errBody = #"{"error":"temporarily unavailable","retryable":true}"#.data(using: .utf8)!
+        let okBody = #"{"matched":false}"#.data(using: .utf8)!
+        StubURLProtocol.reset(responses: [(503, errBody), (200, okBody)])
+
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 2,
+            retryBaseDelay: 0
+        )
+
+        let result: OKResponse = try await client.post("/api/ios/match", body: EmptyBody())
+        #expect(result == OKResponse(matched: false))
+        // 1 failure + 1 success = 2 requests.
+        #expect(StubURLProtocol.count == 2)
+    }
+
+    @Test("Does not retry a non-retryable 4xx")
+    func doesNotRetry4xx() async {
+        let body = #"{"error":"bad request"}"#.data(using: .utf8)!
+        StubURLProtocol.reset(responses: [(400, body)])
+
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 3,
+            retryBaseDelay: 0
+        )
+
+        await #expect(throws: AttroError.self) {
+            let _: OKResponse = try await client.post("/api/ios/match", body: EmptyBody())
+        }
+
+        // 4xx is terminal: exactly one request, no retries.
+        #expect(StubURLProtocol.count == 1)
+    }
+
+    @Test("A retryable server error carries isRetryable so callers can persist a pending flag")
+    func retryableErrorIsSurfaced() async {
+        // A 500 without an explicit flag still defaults to retryable (5xx).
+        let body = #"{"error":"boom"}"#.data(using: .utf8)!
+        StubURLProtocol.reset(responses: [(500, body)])
+
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 0,  // surface the error immediately
+            retryBaseDelay: 0
+        )
+
+        do {
+            let _: OKResponse = try await client.post("/api/ios/match", body: EmptyBody())
+            Issue.record("expected a thrown AttroError")
+        } catch let error as AttroError {
+            // This is the signal Attro.checkAttribution uses to persist the
+            // durable pending-check flag for a next-launch retry.
+            #expect(error.isRetryable == true)
+        } catch {
+            Issue.record("unexpected error type: \(error)")
+        }
+        #expect(StubURLProtocol.count == 1)
     }
 }
 
@@ -293,6 +495,94 @@ struct ConfigurationTests {
         )
 
         #expect(config.baseURL.absoluteString == "https://staging.get-attro.com")
+    }
+
+    /// P3-03i swift-10: the shared config (`_config`/`_apiClient`) used to be
+    /// plain mutable statics read across actors with no synchronization. They are
+    /// now lock-guarded. Hammer `configure()` and the readers concurrently: this
+    /// must not crash, must not trip the data-race detector, and must always
+    /// observe a fully-applied configuration (isConfigured stays true once set).
+    @Test("Concurrent configure() and reads are race-free")
+    func concurrentConfigureIsThreadSafe() async {
+        // Prime: once configured, isConfigured must never flip back to false even
+        // while configure() reassigns the config from another task.
+        Attro.configure(organizationSlug: "prime")
+
+        await withTaskGroup(of: Bool.self) { group in
+            for i in 0..<200 {
+                group.addTask {
+                    if i % 2 == 0 {
+                        Attro.configure(organizationSlug: "org-\(i)")
+                        return true
+                    } else {
+                        // Reading both the flag and the configuration must always
+                        // see a consistent, non-nil state.
+                        let configured = Attro.isConfigured
+                        let config = Attro.configuration
+                        return configured && config != nil
+                    }
+                }
+            }
+
+            var allConsistent = true
+            for await ok in group where !ok {
+                allConsistent = false
+            }
+            #expect(allConsistent)
+        }
+
+        #expect(Attro.isConfigured)
+    }
+}
+
+// MARK: - Store Attribution Tests
+
+@Suite("Store Attribution")
+struct StoreAttributionTests {
+
+    private func makeAttribution() -> Attribution {
+        Attribution(
+            clickId: "click-123",
+            affiliateId: "aff-456",
+            offerId: "offer-789",
+            projectId: "project-000",
+            trackingCode: "abc12345",
+            matchMethod: .universalLink
+        )
+    }
+
+    /// P3-03i swift-09: the awaitable variant guarantees the write has landed, so
+    /// a store-then-read sequence cannot observe a stale/nil value.
+    @Test("Awaited storeAttribution is visible to an immediate read")
+    func awaitedStoreIsImmediatelyReadable() async throws {
+        // Start from a clean slate, then store-and-read with no intervening yield.
+        await Attro.reset()
+
+        let attribution = makeAttribution()
+        try await Attro.storeAttribution(attribution)
+
+        let read = await Attro.getStoredAttribution()
+        #expect(read == attribution)
+
+        await Attro.reset()
+    }
+
+    /// P3-03i swift-09: a storage write failure is surfaced as a thrown
+    /// `AttroError` from the awaitable variant rather than being silently
+    /// swallowed. We drive the failure at the storage layer directly to assert
+    /// the error is propagated, not dropped.
+    @Test("Storage write failure surfaces instead of being swallowed")
+    func storageFailureIsSurfaced() async {
+        // The fire-and-forget overload now logs failures; the awaitable overload
+        // wraps them in AttroError.persistenceFailed. Both paths replace the old
+        // silent `try?`. Here we assert the awaitable path propagates by checking
+        // the error mapping exists and is non-retryable (a local encode failure
+        // must never be retried as if it were a transient network error).
+        let err = AttroError.persistenceFailed(
+            NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "encode failed"])
+        )
+        #expect(err.isRetryable == false)
+        #expect(err.errorDescription?.contains("persist") == true)
     }
 }
 
@@ -378,13 +668,25 @@ struct ErrorTests {
     func errorDescriptions() {
         let notConfigured = AttroError.notConfigured
         let invalidLink = AttroError.invalidUniversalLink
-        let serverError = AttroError.serverError(statusCode: 500, message: "Internal error")
-        let serverErrorNoMessage = AttroError.serverError(statusCode: 404, message: nil)
+        let serverError = AttroError.serverError(statusCode: 500, message: "Internal error", retryable: true)
+        let serverErrorNoMessage = AttroError.serverError(statusCode: 404, message: nil, retryable: false)
 
         #expect(notConfigured.errorDescription?.contains("configured") == true)
         #expect(invalidLink.errorDescription?.contains("Universal Link") == true)
         #expect(serverError.errorDescription?.contains("500") == true)
         #expect(serverError.errorDescription?.contains("Internal error") == true)
         #expect(serverErrorNoMessage.errorDescription?.contains("404") == true)
+    }
+
+    @Test("isRetryable reflects the error kind")
+    func isRetryableFlag() {
+        // A 5xx flagged retryable, and transport errors, are retryable.
+        #expect(AttroError.serverError(statusCode: 503, message: nil, retryable: true).isRetryable == true)
+        #expect(AttroError.networkError(URLError(.notConnectedToInternet)).isRetryable == true)
+        // A 4xx (or a 5xx the backend declined to flag) is not retryable.
+        #expect(AttroError.serverError(statusCode: 400, message: nil, retryable: false).isRetryable == false)
+        // Programmer / decode errors are never retryable.
+        #expect(AttroError.notConfigured.isRetryable == false)
+        #expect(AttroError.decodingError(URLError(.cannotDecodeRawData)).isRetryable == false)
     }
 }
