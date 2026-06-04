@@ -122,23 +122,26 @@ public enum Attro {
         // Mark as checked
         await storage.setAttributionChecked(true)
 
-        // If matched, create and store attribution
-        guard response.matched, let data = response.attribution else {
+        // If matched, create and store attribution. A successful match must
+        // carry a project id (either the `projectId` key or the legacy `orgId`
+        // fallback); without it we cannot attribute downstream, so treat it as
+        // no attribution rather than fabricating one.
+        guard response.matched,
+              let data = response.attribution,
+              let projectId = data.resolvedProjectId else {
             return nil
         }
 
-        let matchMethod: Attribution.MatchMethod
-        switch response.matchMethod {
-        case "ip_ua": matchMethod = .ipUserAgent
-        case "ip_exact": matchMethod = .ipOnly
-        default: matchMethod = .ipUserAgent
-        }
+        // Map the backend match-method string directly from its raw value so
+        // every method (ip_ua_exact / ip_ua_partial / ip_only and the legacy
+        // ip_ua / ip_exact) is preserved instead of collapsing to a default.
+        let matchMethod = response.matchMethod.flatMap(Attribution.MatchMethod.init(rawValue:))
 
         let attribution = Attribution(
             clickId: data.clickId,
             affiliateId: data.affiliateId,
             offerId: data.offerId,
-            orgId: data.orgId,
+            projectId: projectId,
             trackingCode: data.trackingCode,
             matchMethod: matchMethod
         )

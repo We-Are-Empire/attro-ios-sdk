@@ -9,7 +9,7 @@ struct URLParserTests {
 
     @Test("Parses valid Universal Link with all parameters")
     func parseValidUniversalLink() {
-        let url = URL(string: "https://get-attro.com/app/track?click=click-123&aff=aff-456&offer=offer-789&org=org-000&code=abc12345")!
+        let url = URL(string: "https://get-attro.com/app/track?click=click-123&aff=aff-456&offer=offer-789&project=project-000&code=abc12345")!
 
         let attribution = URLParser.parse(url)
 
@@ -17,14 +17,25 @@ struct URLParserTests {
         #expect(attribution?.clickId == "click-123")
         #expect(attribution?.affiliateId == "aff-456")
         #expect(attribution?.offerId == "offer-789")
-        #expect(attribution?.orgId == "org-000")
+        #expect(attribution?.projectId == "project-000")
         #expect(attribution?.trackingCode == "abc12345")
         #expect(attribution?.matchMethod == .universalLink)
     }
 
+    @Test("Parses Universal Link with legacy org parameter")
+    func parseUniversalLinkLegacyOrgParam() {
+        // The backend emits `org` transitionally alongside `project`; older
+        // links may still only carry `org`.
+        let url = URL(string: "https://get-attro.com/app/track?click=click-123&aff=aff-456&offer=offer-789&org=project-000&code=abc12345")!
+
+        let attribution = URLParser.parse(url)
+
+        #expect(attribution?.projectId == "project-000")
+    }
+
     @Test("Parses tracking redirect URL with code in path")
     func parseTrackingRedirectURL() {
-        let url = URL(string: "https://get-attro.com/r/abc12345?click=click-123&aff=aff-456&offer=offer-789&org=org-000")!
+        let url = URL(string: "https://get-attro.com/r/abc12345?click=click-123&aff=aff-456&offer=offer-789&project=project-000")!
 
         let attribution = URLParser.parse(url)
 
@@ -34,7 +45,7 @@ struct URLParserTests {
 
     @Test("Rejects URL from unknown host")
     func rejectUnknownHost() {
-        let url = URL(string: "https://malicious.com/app/track?click=click-123&aff=aff-456&offer=offer-789&org=org-000&code=abc")!
+        let url = URL(string: "https://malicious.com/app/track?click=click-123&aff=aff-456&offer=offer-789&project=project-000&code=abc")!
 
         let attribution = URLParser.parse(url)
 
@@ -43,7 +54,7 @@ struct URLParserTests {
 
     @Test("Allows custom hosts when specified")
     func allowCustomHost() {
-        let url = URL(string: "https://custom.attro.io/app/track?click=click-123&aff=aff-456&offer=offer-789&org=org-000&code=abc")!
+        let url = URL(string: "https://custom.attro.io/app/track?click=click-123&aff=aff-456&offer=offer-789&project=project-000&code=abc")!
 
         let attribution = URLParser.parse(url, allowedHosts: ["custom.attro.io"])
 
@@ -89,9 +100,9 @@ struct AttributionTests {
             clickId: "click-123",
             affiliateId: "aff-456",
             offerId: "offer-789",
-            orgId: "org-000",
+            projectId: "project-000",
             trackingCode: "abc12345",
-            matchMethod: .ipUserAgent
+            matchMethod: .ipUserAgentExact
         )
 
         let encoded = try JSONEncoder().encode(original)
@@ -100,18 +111,107 @@ struct AttributionTests {
         #expect(decoded == original)
     }
 
-    @Test("Attribution MatchMethod encodes correctly")
+    @Test("Attribution MatchMethod encodes the v2 matcher strings")
     func matchMethodEncoding() throws {
         let encoder = JSONEncoder()
-        let decoder = JSONDecoder()
 
-        let ipUA = Attribution.MatchMethod.ipUserAgent
-        let ipOnly = Attribution.MatchMethod.ipOnly
-        let universal = Attribution.MatchMethod.universalLink
+        #expect(String(data: try encoder.encode(Attribution.MatchMethod.ipUserAgentExact), encoding: .utf8) == "\"ip_ua_exact\"")
+        #expect(String(data: try encoder.encode(Attribution.MatchMethod.ipUserAgentPartial), encoding: .utf8) == "\"ip_ua_partial\"")
+        #expect(String(data: try encoder.encode(Attribution.MatchMethod.ipOnly), encoding: .utf8) == "\"ip_only\"")
+        #expect(String(data: try encoder.encode(Attribution.MatchMethod.universalLink), encoding: .utf8) == "\"universal_link\"")
+    }
 
-        #expect(String(data: try encoder.encode(ipUA), encoding: .utf8) == "\"ip_ua\"")
-        #expect(String(data: try encoder.encode(ipOnly), encoding: .utf8) == "\"ip_exact\"")
-        #expect(String(data: try encoder.encode(universal), encoding: .utf8) == "\"universal_link\"")
+    @Test("MatchMethod maps every backend matcher string from its raw value")
+    func matchMethodMapsBackendStrings() {
+        // These are the exact strings emitted by match_ios_device_v2 and the
+        // legacy match_ios_device_atomic fallback. None must collapse to a
+        // silent default.
+        #expect(Attribution.MatchMethod(rawValue: "ip_ua_exact") == .ipUserAgentExact)
+        #expect(Attribution.MatchMethod(rawValue: "ip_ua_partial") == .ipUserAgentPartial)
+        #expect(Attribution.MatchMethod(rawValue: "ip_only") == .ipOnly)
+        #expect(Attribution.MatchMethod(rawValue: "ip_ua") == .ipUserAgent)
+        #expect(Attribution.MatchMethod(rawValue: "ip_exact") == .ipExact)
+        // An unknown string maps to nil rather than a wrong default.
+        #expect(Attribution.MatchMethod(rawValue: "totally_new_method") == nil)
+    }
+}
+
+// MARK: - Match Response Decode Tests
+
+@Suite("MatchResponse Decode")
+struct MatchResponseDecodeTests {
+
+    /// The literal success body returned by POST /api/ios/match. The backend
+    /// returns `projectId` (not `orgId`); decoding must not throw.
+    @Test("Decodes the literal backend match success JSON")
+    func decodesBackendSuccessResponse() throws {
+        let json = """
+        {
+            "matched": true,
+            "matchMethod": "ip_ua_exact",
+            "confidenceScore": 0.95,
+            "attribution": {
+                "affiliateId": "aff-456",
+                "offerId": "offer-789",
+                "projectId": "project-000",
+                "clickId": "click-123",
+                "trackingCode": "abc12345"
+            },
+            "subscriberAttributes": {
+                "$rd_affiliate_id": "aff-456",
+                "$rd_offer_id": "offer-789",
+                "$rd_project_id": "project-000",
+                "$rd_click_id": "click-123",
+                "$rd_tracking_code": "abc12345"
+            }
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(MatchResponse.self, from: json)
+
+        #expect(response.matched == true)
+        #expect(response.matchMethod == "ip_ua_exact")
+        #expect(response.confidenceScore == 0.95)
+        #expect(response.attribution?.resolvedProjectId == "project-000")
+        #expect(response.attribution?.affiliateId == "aff-456")
+        #expect(response.subscriberAttributes?["$rd_project_id"] == "project-000")
+
+        // The mapped match method must round-trip to the v2 exact case.
+        let mapped = response.matchMethod.flatMap(Attribution.MatchMethod.init(rawValue:))
+        #expect(mapped == .ipUserAgentExact)
+    }
+
+    @Test("Decodes a legacy response carrying orgId instead of projectId")
+    func decodesLegacyOrgIdResponse() throws {
+        let json = """
+        {
+            "matched": true,
+            "matchMethod": "ip_only",
+            "attribution": {
+                "affiliateId": "aff-456",
+                "offerId": "offer-789",
+                "orgId": "project-000",
+                "clickId": "click-123",
+                "trackingCode": "abc12345"
+            }
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(MatchResponse.self, from: json)
+
+        #expect(response.attribution?.resolvedProjectId == "project-000")
+    }
+
+    @Test("Decodes a no-match response")
+    func decodesNoMatchResponse() throws {
+        let json = """
+        { "matched": false, "message": "No attribution found" }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(MatchResponse.self, from: json)
+
+        #expect(response.matched == false)
+        #expect(response.attribution == nil)
     }
 }
 
@@ -128,7 +228,7 @@ struct StorageTests {
             clickId: "click-123",
             affiliateId: "aff-456",
             offerId: "offer-789",
-            orgId: "org-000",
+            projectId: "project-000",
             trackingCode: "abc12345",
             matchMethod: .universalLink
         )
@@ -156,7 +256,7 @@ struct StorageTests {
 
         await storage.setAttributionChecked(true)
         await storage.setStoredAttribution(Attribution(
-            clickId: "c", affiliateId: "a", offerId: "o", orgId: "g", trackingCode: "t", matchMethod: nil
+            clickId: "c", affiliateId: "a", offerId: "o", projectId: "p", trackingCode: "t", matchMethod: nil
         ))
 
         await storage.reset()

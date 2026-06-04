@@ -33,7 +33,10 @@ extension Attro {
             "$rd_click_id": attribution.clickId,
             "$rd_affiliate_id": attribution.affiliateId,
             "$rd_offer_id": attribution.offerId,
-            "$rd_org_id": attribution.orgId,
+            // The backend webhook reads `$rd_project_id`. `$rd_org_id` is kept
+            // transitionally so older backend deployments still receive a value.
+            "$rd_project_id": attribution.projectId,
+            "$rd_org_id": attribution.projectId,
             "$rd_tracking_code": attribution.trackingCode,
             "$rd_attributed_at": now
         ])

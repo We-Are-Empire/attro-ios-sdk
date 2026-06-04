@@ -13,8 +13,8 @@ enum URLParser {
     /// Parse a Universal Link URL into Attribution data
     ///
     /// Supported URL formats:
-    /// - `https://get-attro.com/r/{code}?click={id}&aff={id}&offer={id}&org={id}`
-    /// - `https://get-attro.com/app/track?click={id}&aff={id}&offer={id}&org={id}&code={code}`
+    /// - `https://get-attro.com/r/{code}?click={id}&aff={id}&offer={id}&project={id}`
+    /// - `https://get-attro.com/app/track?click={id}&aff={id}&offer={id}&project={id}&code={code}`
     ///
     /// - Parameter url: The Universal Link URL to parse
     /// - Parameter allowedHosts: Additional hosts to allow (for custom domains)
@@ -38,18 +38,21 @@ enum URLParser {
         }
 
         // Try to get all required parameters
-        // Parameter names: click (or click_id), aff (or affiliate_id), offer (or offer_id), org (or org_id), code
+        // Parameter names: click (or click_id), aff (or affiliate_id),
+        // offer (or offer_id), project (or project_id, with legacy org/org_id
+        // fallback), code
         let clickId = params["click"] ?? params["click_id"]
         let affiliateId = params["aff"] ?? params["affiliate_id"]
         let offerId = params["offer"] ?? params["offer_id"]
-        let orgId = params["org"] ?? params["org_id"]
+        let projectId = params["project"] ?? params["project_id"]
+            ?? params["org"] ?? params["org_id"]
         let trackingCode = params["code"] ?? extractCodeFromPath(url.path)
 
         // Validate we have all required parameters
         guard let clickId = clickId,
               let affiliateId = affiliateId,
               let offerId = offerId,
-              let orgId = orgId,
+              let projectId = projectId,
               let trackingCode = trackingCode else {
             return nil
         }
@@ -58,7 +61,7 @@ enum URLParser {
             clickId: clickId,
             affiliateId: affiliateId,
             offerId: offerId,
-            orgId: orgId,
+            projectId: projectId,
             trackingCode: trackingCode,
             matchMethod: .universalLink
         )
