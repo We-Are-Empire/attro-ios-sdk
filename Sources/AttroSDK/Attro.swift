@@ -63,9 +63,12 @@ public enum Attro {
         /// Additional hosts to allow for Universal Links
         public let allowedHosts: [String]
 
-        /// Server-to-server API key (`x-api-key`) for the P2P referral endpoints
+        /// The PER-PROJECT app key (`x-api-key`) for the P2P referral endpoints
         /// (`/api/ios/referral/*`). Optional — only required if you call
-        /// `getReferralProgram`. Provided by Attro; ship it in your app config.
+        /// `getReferralProgram`. Minted in the Attro admin (per project); the
+        /// server resolves your org/project FROM this key, so the SDK never
+        /// sends slugs to the referral endpoints. Server-side secret by nature —
+        /// ship it via your app config, not source control.
         public let apiKey: String?
 
         public init(
@@ -319,33 +322,32 @@ public enum Attro {
     /// once a referred user reaches their first paid invoice.
     ///
     /// Two auth gates are required by the backend:
-    ///  - the configured ``Configuration/apiKey`` (`x-api-key`), proving the
-    ///    caller is the integrating app, and
-    ///  - `accessToken`, the user's upstream (Ride Supabase) access token, sent
-    ///    as a bearer. The affiliate identity is derived from the VERIFIED token
-    ///    subject — pass a FRESH, non-expired token (e.g. Ride's
-    ///    `ensureValidAccessToken()`).
+    ///  - the configured ``Configuration/apiKey`` (`x-api-key`) — the per-project
+    ///    app key. The backend resolves the org/project from it, so no slugs are
+    ///    sent (or accepted) in the request body.
+    ///  - `accessToken`, the user's upstream access token, sent as a bearer. The
+    ///    affiliate identity is derived from the VERIFIED token subject — pass a
+    ///    FRESH, non-expired token.
     ///
     /// - Parameters:
     ///   - accessToken: The user's upstream access token (bearer).
-    ///   - orgSlug: Organization slug (defaults to the configured one).
-    ///   - projectSlug: Optional project slug (defaults server-side).
-    ///   - provider: Identity-provider slug that issued `accessToken` (default "ride").
+    ///   - provider: Identity-provider slug that issued `accessToken` (as
+    ///     enrolled for the project in Attro, e.g. `"ride"`). REQUIRED with no
+    ///     default — the backend refuses to guess so one tenant can never
+    ///     silently resolve against another tenant's enrolment.
     /// - Returns: The user's referral code, share URL, and P2P stats.
     /// - Throws: `AttroError.notConfigured` if the SDK or its `apiKey` is unset,
     ///   `.missingParameter` for an empty token, or a network/server error.
     public static func getReferralProgram(
         accessToken: String,
-        orgSlug: String? = nil,
-        projectSlug: String? = nil,
-        provider: String = "ride"
+        provider: String
     ) async throws -> ReferralProgramInfo {
         let state = currentState()
         guard let client = state.client, let config = state.config else {
             throw AttroError.notConfigured
         }
         guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            // The referral endpoints are gated by the server-to-server key; without
+            // The referral endpoints are gated by the per-project app key; without
             // it the request can only ever 401, so fail fast with a clear cause.
             throw AttroError.missingParameter("apiKey")
         }
@@ -354,11 +356,7 @@ public enum Attro {
             throw AttroError.missingParameter("accessToken")
         }
 
-        let request = ReferralProgramRequest(
-            orgSlug: orgSlug ?? config.organizationSlug,
-            projectSlug: projectSlug,
-            provider: provider
-        )
+        let request = ReferralProgramRequest(provider: provider)
 
         return try await client.post(
             "/api/ios/referral/me",

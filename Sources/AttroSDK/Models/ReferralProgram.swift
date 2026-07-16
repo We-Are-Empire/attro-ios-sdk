@@ -11,8 +11,9 @@ public struct ReferralProgramInfo: Codable, Sendable, Equatable {
     /// The user's referral code (e.g., "abc12345").
     public let code: String
 
-    /// The shareable URL for the code (e.g., "https://ride.app/r/abc12345").
-    /// Render a QR from THIS value on-device.
+    /// The shareable URL for the code — `<program share_base_url>/<code>`, as
+    /// configured per referral program in Attro. Render a QR from THIS value
+    /// on-device.
     public let shareUrl: String
 
     /// Live referral stats for the user.
@@ -37,11 +38,10 @@ extension ReferralProgramInfo {
     public var shareURL: URL? { URL(string: shareUrl) }
 }
 
-/// Request body for `POST /api/ios/referral/me`. The affiliate identity is
-/// derived server-side from the verified bearer token, never from the body; the
-/// body only names the program (org / project / identity provider).
+/// Request body for `POST /api/ios/referral/me`. The tenant (org/project) is
+/// resolved server-side from the per-project app key and the affiliate identity
+/// from the verified bearer token — neither is ever taken from the body. The
+/// body only names the identity provider that issued the bearer token.
 struct ReferralProgramRequest: Encodable {
-    let orgSlug: String
-    let projectSlug: String?
     let provider: String
 }

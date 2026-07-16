@@ -779,7 +779,7 @@ struct ReferralProgramTests {
             maxRetries: 0
         )
 
-        let body = ReferralProgramRequest(orgSlug: "ride", projectSlug: nil, provider: "ride")
+        let body = ReferralProgramRequest(provider: "ride")
         let info: ReferralProgramInfo = try await client.post(
             "/api/ios/referral/me", body: body, apiKey: "SECRET_KEY", bearerToken: "JWT_TOKEN")
 
@@ -799,7 +799,7 @@ struct ReferralProgramTests {
             session: makeSession(),
             maxRetries: 0
         )
-        let body = ReferralProgramRequest(orgSlug: "ride", projectSlug: nil, provider: "ride")
+        let body = ReferralProgramRequest(provider: "ride")
         let _: ReferralProgramInfo = try await client.post("/api/ios/referral/me", body: body)
         let req = ReferralStubURLProtocol.lastRequest
         #expect(req?.value(forHTTPHeaderField: "x-api-key") == nil)
@@ -816,8 +816,7 @@ struct ReferralProgramTests {
         )
         await #expect(throws: AttroError.self) {
             let _: ReferralProgramInfo = try await client.post(
-                "/api/ios/referral/me", body: ReferralProgramRequest(
-                    orgSlug: "ride", projectSlug: nil, provider: "ride"),
+                "/api/ios/referral/me", body: ReferralProgramRequest(provider: "ride"),
                 apiKey: "K", bearerToken: "T")
         }
         #expect(ReferralStubURLProtocol.count == 1)  // no retries on 401
@@ -833,8 +832,7 @@ struct ReferralProgramTests {
         )
         await #expect(throws: AttroError.self) {
             let _: ReferralProgramInfo = try await client.post(
-                "/api/ios/referral/me", body: ReferralProgramRequest(
-                    orgSlug: "ride", projectSlug: nil, provider: "ride"),
+                "/api/ios/referral/me", body: ReferralProgramRequest(provider: "ride"),
                 apiKey: "K", bearerToken: "T")
         }
         #expect(ReferralStubURLProtocol.count == 1)
