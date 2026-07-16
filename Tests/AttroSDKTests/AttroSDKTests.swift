@@ -326,6 +326,10 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     /// repeats once exhausted.
     nonisolated(unsafe) static var responses: [(Int, Data)] = []
     nonisolated(unsafe) static var requestCount = 0
+    /// The most recent request seen — lets tests assert method / path / headers.
+    /// (URLProtocol moves the body into `httpBodyStream`, so assert on headers +
+    /// URL here and cover body encoding via a direct model decode test.)
+    nonisolated(unsafe) static var lastRequest: URLRequest?
     private static let lock = NSLock()
 
     static func reset(responses: [(Int, Data)]) {
@@ -333,6 +337,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         defer { lock.unlock() }
         self.responses = responses
         self.requestCount = 0
+        self.lastRequest = nil
     }
 
     static var count: Int {
@@ -347,6 +352,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         let (status, body): (Int, Data) = {
             StubURLProtocol.lock.lock()
             defer { StubURLProtocol.lock.unlock() }
+            StubURLProtocol.lastRequest = request
             let idx = min(StubURLProtocol.requestCount, StubURLProtocol.responses.count - 1)
             StubURLProtocol.requestCount += 1
             return StubURLProtocol.responses[idx]
@@ -688,5 +694,147 @@ struct ErrorTests {
         // Programmer / decode errors are never retryable.
         #expect(AttroError.notConfigured.isRetryable == false)
         #expect(AttroError.decodingError(URLError(.cannotDecodeRawData)).isRetryable == false)
+    }
+}
+
+// MARK: - P2P Referral Program Tests
+
+/// A dedicated stub for the referral suite with its OWN static state, so it never
+/// races the shared `StubURLProtocol` used by `APIClientRetryTests` (Swift Testing
+/// runs different suites in parallel; `.serialized` only orders within a suite).
+final class ReferralStubURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var responses: [(Int, Data)] = []
+    nonisolated(unsafe) static var requestCount = 0
+    nonisolated(unsafe) static var lastRequest: URLRequest?
+    private static let lock = NSLock()
+
+    static func reset(responses: [(Int, Data)]) {
+        lock.lock(); defer { lock.unlock() }
+        self.responses = responses
+        self.requestCount = 0
+        self.lastRequest = nil
+    }
+
+    static var count: Int {
+        lock.lock(); defer { lock.unlock() }
+        return requestCount
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let (status, body): (Int, Data) = {
+            ReferralStubURLProtocol.lock.lock()
+            defer { ReferralStubURLProtocol.lock.unlock() }
+            ReferralStubURLProtocol.lastRequest = request
+            let idx = min(ReferralStubURLProtocol.requestCount, ReferralStubURLProtocol.responses.count - 1)
+            ReferralStubURLProtocol.requestCount += 1
+            return ReferralStubURLProtocol.responses[idx]
+        }()
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+@Suite("Referral Program (/api/ios/referral/me)", .serialized)
+struct ReferralProgramTests {
+
+    private func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ReferralStubURLProtocol.self]
+        return URLSession(configuration: config)
+    }
+
+    private let sampleJSON = #"""
+    {"code":"abc12345","shareUrl":"https://ride.app/r/abc12345",
+     "stats":{"completed":3,"pending":2,"tokensEarned":30,"tokensPending":20}}
+    """#
+
+    @Test("Decodes the /referral/me response shape")
+    func decodesResponse() throws {
+        let info = try JSONDecoder().decode(
+            ReferralProgramInfo.self, from: Data(sampleJSON.utf8))
+        #expect(info.code == "abc12345")
+        #expect(info.shareUrl == "https://ride.app/r/abc12345")
+        #expect(info.shareURL != nil)
+        #expect(info.stats.completed == 3)
+        #expect(info.stats.pending == 2)
+        #expect(info.stats.tokensEarned == 30)
+        #expect(info.stats.tokensPending == 20)
+    }
+
+    @Test("Sends x-api-key + Bearer to the correct endpoint and decodes")
+    func sendsAuthHeaders() async throws {
+        ReferralStubURLProtocol.reset(responses: [(200, Data(sampleJSON.utf8))])
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 0
+        )
+
+        let body = ReferralProgramRequest(provider: "ride")
+        let info: ReferralProgramInfo = try await client.post(
+            "/api/ios/referral/me", body: body, apiKey: "SECRET_KEY", bearerToken: "JWT_TOKEN")
+
+        #expect(info.code == "abc12345")
+        let req = ReferralStubURLProtocol.lastRequest
+        #expect(req?.httpMethod == "POST")
+        #expect(req?.url?.path == "/api/ios/referral/me")
+        #expect(req?.value(forHTTPHeaderField: "x-api-key") == "SECRET_KEY")
+        #expect(req?.value(forHTTPHeaderField: "Authorization") == "Bearer JWT_TOKEN")
+    }
+
+    @Test("Omits the auth headers when not supplied (e.g. legacy calls)")
+    func omitsAuthHeadersByDefault() async throws {
+        ReferralStubURLProtocol.reset(responses: [(200, Data(sampleJSON.utf8))])
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 0
+        )
+        let body = ReferralProgramRequest(provider: "ride")
+        let _: ReferralProgramInfo = try await client.post("/api/ios/referral/me", body: body)
+        let req = ReferralStubURLProtocol.lastRequest
+        #expect(req?.value(forHTTPHeaderField: "x-api-key") == nil)
+        #expect(req?.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test("Maps 401 (bad key/token) to a non-retryable serverError")
+    func maps401() async {
+        ReferralStubURLProtocol.reset(responses: [(401, Data(#"{"error":"Invalid API key"}"#.utf8))])
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 3  // must NOT retry a 4xx
+        )
+        await #expect(throws: AttroError.self) {
+            let _: ReferralProgramInfo = try await client.post(
+                "/api/ios/referral/me", body: ReferralProgramRequest(provider: "ride"),
+                apiKey: "K", bearerToken: "T")
+        }
+        #expect(ReferralStubURLProtocol.count == 1)  // no retries on 401
+    }
+
+    @Test("Maps 403 (referrals not enabled) to a non-retryable serverError")
+    func maps403() async {
+        ReferralStubURLProtocol.reset(responses: [(403, Data(#"{"error":"not enabled"}"#.utf8))])
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test")!,
+            session: makeSession(),
+            maxRetries: 3
+        )
+        await #expect(throws: AttroError.self) {
+            let _: ReferralProgramInfo = try await client.post(
+                "/api/ios/referral/me", body: ReferralProgramRequest(provider: "ride"),
+                apiKey: "K", bearerToken: "T")
+        }
+        #expect(ReferralStubURLProtocol.count == 1)
     }
 }

@@ -47,16 +47,29 @@ actor APIClient {
     ///   - userAgent: User-Agent header to send. Pass the real device
     ///     User-Agent (see `DeviceInfo.currentUserAgent`) so the backend matcher
     ///     can award browser-family confidence points.
+    ///   - apiKey: Optional server-to-server key sent as `x-api-key` — required by
+    ///     the `/api/ios/referral/*` endpoints to prove the caller is the app.
+    ///   - bearerToken: Optional upstream access token sent as
+    ///     `Authorization: Bearer <token>` — identifies WHICH user (the referral
+    ///     endpoints derive the affiliate from the verified token subject).
     func post<T: Decodable, B: Encodable>(
         _ path: String,
         body: B,
-        userAgent: String = DeviceInfo.defaultUserAgent
+        userAgent: String = DeviceInfo.defaultUserAgent,
+        apiKey: String? = nil,
+        bearerToken: String? = nil
     ) async throws -> T {
         let url = baseURL.appendingPathComponent(path)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let apiKey = apiKey {
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        }
+        if let bearerToken = bearerToken {
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
         request.httpBody = try encoder.encode(body)
 
         return try await send(request)

@@ -63,14 +63,24 @@ public enum Attro {
         /// Additional hosts to allow for Universal Links
         public let allowedHosts: [String]
 
+        /// The PER-PROJECT app key (`x-api-key`) for the P2P referral endpoints
+        /// (`/api/ios/referral/*`). Optional — only required if you call
+        /// `getReferralProgram`. Minted in the Attro admin (per project); the
+        /// server resolves your org/project FROM this key, so the SDK never
+        /// sends slugs to the referral endpoints. Server-side secret by nature —
+        /// ship it via your app config, not source control.
+        public let apiKey: String?
+
         public init(
             organizationSlug: String,
             baseURL: URL = URL(string: "https://get-attro.com")!,
-            allowedHosts: [String] = []
+            allowedHosts: [String] = [],
+            apiKey: String? = nil
         ) {
             self.organizationSlug = organizationSlug
             self.baseURL = baseURL
             self.allowedHosts = allowedHosts
+            self.apiKey = apiKey
         }
     }
 
@@ -299,6 +309,61 @@ public enum Attro {
         )
 
         return try await client.post("/api/ios/my-affiliate", body: request)
+    }
+
+    // MARK: - P2P Referral Program
+
+    /// Get the current user's peer-to-peer referral info (the in-app "invite a
+    /// friend" screen) from `/api/ios/referral/me`.
+    ///
+    /// Lazily provisions the caller's invisible internal affiliate + a referral
+    /// link on the program's offer, and returns the shareable code + live stats
+    /// (rendered as a QR on-device from `shareUrl`). The referrer earns a token
+    /// once a referred user reaches their first paid invoice.
+    ///
+    /// Two auth gates are required by the backend:
+    ///  - the configured ``Configuration/apiKey`` (`x-api-key`) — the per-project
+    ///    app key. The backend resolves the org/project from it, so no slugs are
+    ///    sent (or accepted) in the request body.
+    ///  - `accessToken`, the user's upstream access token, sent as a bearer. The
+    ///    affiliate identity is derived from the VERIFIED token subject — pass a
+    ///    FRESH, non-expired token.
+    ///
+    /// - Parameters:
+    ///   - accessToken: The user's upstream access token (bearer).
+    ///   - provider: Identity-provider slug that issued `accessToken` (as
+    ///     enrolled for the project in Attro, e.g. `"ride"`). REQUIRED with no
+    ///     default — the backend refuses to guess so one tenant can never
+    ///     silently resolve against another tenant's enrolment.
+    /// - Returns: The user's referral code, share URL, and P2P stats.
+    /// - Throws: `AttroError.notConfigured` if the SDK or its `apiKey` is unset,
+    ///   `.missingParameter` for an empty token, or a network/server error.
+    public static func getReferralProgram(
+        accessToken: String,
+        provider: String
+    ) async throws -> ReferralProgramInfo {
+        let state = currentState()
+        guard let client = state.client, let config = state.config else {
+            throw AttroError.notConfigured
+        }
+        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
+            // The referral endpoints are gated by the per-project app key; without
+            // it the request can only ever 401, so fail fast with a clear cause.
+            throw AttroError.missingParameter("apiKey")
+        }
+        let token = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            throw AttroError.missingParameter("accessToken")
+        }
+
+        let request = ReferralProgramRequest(provider: provider)
+
+        return try await client.post(
+            "/api/ios/referral/me",
+            body: request,
+            apiKey: apiKey,
+            bearerToken: token
+        )
     }
 
     // MARK: - Testing / Debug
