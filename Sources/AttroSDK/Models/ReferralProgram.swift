@@ -19,6 +19,12 @@ public struct ReferralProgramInfo: Codable, Sendable, Equatable {
     /// Live referral stats for the user.
     public let stats: Stats
 
+    /// The project's default `subscription_credit` reward — how earned tokens
+    /// convert into value (e.g. a percentage off the next subscription payment).
+    /// `nil` when the project has no (unambiguous) subscription-credit reward
+    /// configured, or when talking to a backend that predates the field.
+    public let defaultReward: DefaultReward?
+
     public struct Stats: Codable, Sendable, Equatable {
         /// Referrals that reached first-paid (referrer token awarded).
         public let completed: Int
@@ -28,6 +34,35 @@ public struct ReferralProgramInfo: Codable, Sendable, Equatable {
         public let tokensEarned: Int
         /// Tokens withheld pending completion of `pending` referrals.
         public let tokensPending: Int
+        /// The user's CURRENT spendable token balance (earned minus redeemed) —
+        /// render this as "N credits". Optional: absent on older backends.
+        public let tokenBalance: Int?
+    }
+
+    /// The reward a token redeems into, advertised so the app can describe the
+    /// credit ("each credit = 20% off a month") without hardcoding its value.
+    public struct DefaultReward: Codable, Sendable, Equatable {
+        public let id: String
+        public let name: String
+        /// Tokens one redemption spends (currently 1).
+        public let tokenCost: Int
+        /// The credit's configuration, when set.
+        public let fulfillmentData: FulfillmentData?
+    }
+
+    /// Known keys of the reward's `fulfillment_data` JSON. The server stores
+    /// arbitrary JSON here; unknown keys are ignored. The JSON's own keys are
+    /// snake_case (raw config), unlike the camelCase response envelope.
+    public struct FulfillmentData: Codable, Sendable, Equatable {
+        /// Percentage off one payment per credit (e.g. 20).
+        public let discountPercent: Int?
+        /// What the credit applies to (e.g. "next_invoice").
+        public let applies: String?
+
+        enum CodingKeys: String, CodingKey {
+            case discountPercent = "discount_percent"
+            case applies
+        }
     }
 }
 

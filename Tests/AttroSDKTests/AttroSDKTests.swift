@@ -768,6 +768,44 @@ struct ReferralProgramTests {
         #expect(info.stats.pending == 2)
         #expect(info.stats.tokensEarned == 30)
         #expect(info.stats.tokensPending == 20)
+        // v1 backend shape: the newer optional fields are simply absent.
+        #expect(info.stats.tokenBalance == nil)
+        #expect(info.defaultReward == nil)
+    }
+
+    @Test("Decodes tokenBalance + defaultReward (v2 fields, snake_case fulfillment)")
+    func decodesV2Fields() throws {
+        let json = #"""
+        {"code":"abc12345","shareUrl":"https://ride.app/r/abc12345",
+         "stats":{"completed":3,"pending":2,"tokensEarned":30,"tokensPending":20,
+                  "tokenBalance":7},
+         "defaultReward":{"id":"11111111-2222-3333-4444-555555555555",
+                          "name":"Subscription credit","tokenCost":1,
+                          "fulfillmentData":{"discount_percent":20,
+                                             "applies":"next_invoice",
+                                             "some_future_key":true}}}
+        """#
+        let info = try JSONDecoder().decode(
+            ReferralProgramInfo.self, from: Data(json.utf8))
+        #expect(info.stats.tokenBalance == 7)
+        let reward = try #require(info.defaultReward)
+        #expect(reward.name == "Subscription credit")
+        #expect(reward.tokenCost == 1)
+        #expect(reward.fulfillmentData?.discountPercent == 20)
+        #expect(reward.fulfillmentData?.applies == "next_invoice")
+    }
+
+    @Test("defaultReward with null fulfillmentData decodes")
+    func decodesNullFulfillment() throws {
+        let json = #"""
+        {"code":"c","shareUrl":"https://r/x",
+         "stats":{"completed":0,"pending":0,"tokensEarned":0,"tokensPending":0,
+                  "tokenBalance":0},
+         "defaultReward":{"id":"i","name":"n","tokenCost":1,"fulfillmentData":null}}
+        """#
+        let info = try JSONDecoder().decode(
+            ReferralProgramInfo.self, from: Data(json.utf8))
+        #expect(info.defaultReward?.fulfillmentData == nil)
     }
 
     @Test("Sends x-api-key + Bearer to the correct endpoint and decodes")

@@ -73,6 +73,19 @@ struct DeviceInfo: Encodable, Sendable {
     /// default argument on the API client.
     static var defaultUserAgent: String { currentUserAgent }
 
+    /// A truthful SDK User-Agent for the AUTHENTICATED endpoints
+    /// (`/api/ios/my-affiliate`, `/api/ios/referral/*`).
+    ///
+    /// The Safari-shaped `currentUserAgent` exists solely so the fingerprint
+    /// matcher can award browser-family confidence points against the
+    /// click-time snapshot; the authenticated endpoints identify the user from
+    /// the bearer token and gain nothing from a browser-shaped UA — so those
+    /// calls identify themselves honestly instead.
+    static var sdkUserAgent: String {
+        let bundle = Bundle.main.bundleIdentifier ?? "unknown-bundle"
+        return "AttroSDK/1.0 (\(bundle); OS \(systemVersionForUserAgent))"
+    }
+
     /// The OS version formatted for a User-Agent (underscore-separated, e.g.
     /// "17_4_1"), matching Apple's User-Agent convention.
     private static var systemVersionForUserAgent: String {

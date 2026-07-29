@@ -308,7 +308,11 @@ public enum Attro {
             orgSlug: orgSlug ?? config.organizationSlug
         )
 
-        return try await client.post("/api/ios/my-affiliate", body: request)
+        return try await client.post(
+            "/api/ios/my-affiliate",
+            body: request,
+            userAgent: DeviceInfo.sdkUserAgent
+        )
     }
 
     // MARK: - P2P Referral Program
@@ -361,6 +365,7 @@ public enum Attro {
         return try await client.post(
             "/api/ios/referral/me",
             body: request,
+            userAgent: DeviceInfo.sdkUserAgent,
             apiKey: apiKey,
             bearerToken: token
         )
