@@ -86,12 +86,23 @@ struct DeviceInfo: Encodable, Sendable {
 
 /// Request body for the match API
 struct MatchRequest: Encodable {
+    /// The app's build-time bundle identifier (e.g. `com.MooveApps.Ride`).
+    ///
+    /// REQUIRED by the multi-tenant backend: `/api/ios/match` resolves the tenant
+    /// from this via `resolveProjectForMatch(bundleId)`, and a missing/unknown
+    /// value resolves to no project and returns `matched:false`. Without it every
+    /// deferred match silently no-matches, so it must be sent. It is a non-secret,
+    /// build-time identifier read from `Bundle.main.bundleIdentifier`; nil only in
+    /// unusual hosts (some test bundles / app extensions), where the resulting
+    /// no-match is the safe outcome. `Encodable` omits it when nil.
+    let bundleId: String?
     let screenWidth: Int?
     let screenHeight: Int?
     let timezone: String?
     let language: String?
 
-    init(deviceInfo: DeviceInfo) {
+    init(deviceInfo: DeviceInfo, bundleId: String? = Bundle.main.bundleIdentifier) {
+        self.bundleId = bundleId
         self.screenWidth = deviceInfo.screenWidth > 0 ? deviceInfo.screenWidth : nil
         self.screenHeight = deviceInfo.screenHeight > 0 ? deviceInfo.screenHeight : nil
         self.timezone = deviceInfo.timezone

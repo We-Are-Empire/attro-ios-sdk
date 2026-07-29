@@ -838,3 +838,56 @@ struct ReferralProgramTests {
         #expect(ReferralStubURLProtocol.count == 1)
     }
 }
+
+// MARK: - MatchRequest Body
+
+@Suite("MatchRequest Body")
+struct MatchRequestTests {
+
+    private func encodedJSON(_ request: MatchRequest) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(request)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    private var sampleDevice: DeviceInfo {
+        DeviceInfo(
+            screenWidth: 1170,
+            screenHeight: 2532,
+            timezone: "America/Los_Angeles",
+            language: "en",
+            userAgent: DeviceInfo.currentUserAgent
+        )
+    }
+
+    @Test("Includes bundleId so the multi-tenant backend can resolve the project")
+    func encodesBundleId() throws {
+        // Without bundleId, /api/ios/match's resolveProjectForMatch returns null
+        // and every deferred match no-matches — so it MUST be on the wire.
+        let request = MatchRequest(deviceInfo: sampleDevice, bundleId: "com.MooveApps.Ride")
+        let json = try encodedJSON(request)
+
+        #expect(json["bundleId"] as? String == "com.MooveApps.Ride")
+        #expect(json["screenWidth"] as? Int == 1170)
+        #expect(json["screenHeight"] as? Int == 2532)
+        #expect(json["timezone"] as? String == "America/Los_Angeles")
+        #expect(json["language"] as? String == "en")
+    }
+
+    @Test("Omits the bundleId key when nil rather than sending a null literal")
+    func omitsNilBundleId() throws {
+        let request = MatchRequest(deviceInfo: sampleDevice, bundleId: nil)
+        let json = try encodedJSON(request)
+
+        #expect(json.keys.contains("bundleId") == false)
+    }
+
+    @Test("Defaults bundleId to the host bundle identifier")
+    func defaultBundleIdFromMainBundle() throws {
+        // The default argument is Bundle.main.bundleIdentifier; the encoded value
+        // must match it (both may be nil in a bare test host — still equal).
+        let request = MatchRequest(deviceInfo: sampleDevice)
+        let json = try encodedJSON(request)
+
+        #expect(json["bundleId"] as? String == Bundle.main.bundleIdentifier)
+    }
+}
