@@ -7,7 +7,7 @@ A lightweight Swift Package for integrating Attro affiliate tracking into iOS ap
 - **Deferred Attribution** - Automatically match users to affiliate clicks on first app launch
 - **Universal Link Handling** - Parse attribution from Universal Links
 - **RevenueCat Integration** - Optional integration to set subscriber attributes
-- **Refer-a-Friend** - Get referral links and stats for logged-in users
+- **Refer-a-Friend** - Get referral codes, share links, and stats for logged-in users
 
 ## Requirements
 
@@ -44,7 +44,10 @@ import AttroSDK
 @main
 struct MyApp: App {
     init() {
-        Attro.configure(organizationSlug: "ride-ios")
+        Attro.configure(Attro.Configuration(
+            organizationSlug: "ride-ios",
+            apiKey: Secrets.attroAppKey  // per-project app key, from the Attro admin
+        ))
     }
 
     var body: some Scene {
@@ -54,6 +57,22 @@ struct MyApp: App {
     }
 }
 ```
+
+`Configuration` fields:
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `organizationSlug` | yes | Your organization's slug (e.g. `"ride-ios"`) |
+| `baseURL` | no | Attro API base URL (defaults to `https://get-attro.com`) |
+| `allowedHosts` | no | Additional hosts to accept as Attro Universal Links (e.g. a custom tracking domain) |
+| `apiKey` | for referrals | The **per-project app key** (`x-api-key`), minted in the Attro admin. Required only for the referral-program endpoints (`getReferralProgram`); the server resolves your org/project from it. Treat it as a secret — ship it via your app config, not source control. |
+
+> **Warning:** `configure` is last-write-wins global state — each call replaces
+> the entire stored configuration. The convenience overload
+> `Attro.configure(organizationSlug:baseURL:)` builds a configuration with
+> `apiKey: nil`, so calling it after (or instead of) the full form silently
+> disables the referral endpoints. If you use `apiKey` or `allowedHosts`,
+> configure once with a full `Configuration`.
 
 ### 2. Check Deferred Attribution
 
@@ -82,7 +101,9 @@ Task {
 
 > The deferred-match request sends the device's real Safari/WebKit User-Agent so
 > the backend can match on browser family. A static User-Agent would degrade
-> every match to IP-only, which no longer auto-attributes by default.
+> every match to IP-only, which no longer auto-attributes by default. It also
+> sends the app's bundle identifier (`Bundle.main.bundleIdentifier`) so the
+> backend can resolve which project the install belongs to.
 
 ### 3. Handle Universal Links
 
@@ -99,19 +120,35 @@ Parse attribution from Universal Links:
 
 ### 4. Refer-a-Friend
 
-Get a user's referral link and stats:
+Get a logged-in user's referral code, share link, and stats. This requires
+`Configuration.apiKey` (the per-project app key) plus a **fresh** access token
+from your identity provider — the backend derives the user from the verified
+bearer token, so never pass a cached/expired token:
 
 ```swift
-let referral = try await Attro.getMyReferral(userId: currentUser.id)
+let referral = try await Attro.getReferralProgram(
+    accessToken: session.accessToken,  // fresh upstream bearer token
+    provider: "ride"                   // identity-provider slug enrolled in Attro
+)
 
 // Display stats
-print("Clicks: \(referral.stats.clicks)")
-print("Conversions: \(referral.stats.conversions.approved)")
-print("Tokens: \(referral.stats.tokens.balance)")
+print("Completed referrals: \(referral.stats.completed)")
+print("Pending referrals: \(referral.stats.pending)")
+print("Credits: \(referral.stats.tokenBalance ?? referral.stats.tokensEarned)")
 
-// Share referral link
-let url = referral.trackingLink.url
+// Describe what a credit is worth (when the project configures it)
+if let reward = referral.defaultReward,
+   let percent = reward.fulfillmentData?.discountPercent {
+    print("Each credit = \(percent)% off")
+}
+
+// Share referral link (render a QR from this URL on-device)
+let url = referral.shareUrl
 ```
+
+> The older `Attro.getMyReferral(userId:orgSlug:)` targets a retired backend
+> contract and now returns 401 against every current deployment. It is
+> deprecated — migrate to `getReferralProgram`.
 
 ## Complete Integration Example
 
@@ -122,7 +159,10 @@ import AttroSDK
 @main
 struct RideApp: App {
     init() {
-        Attro.configure(organizationSlug: "ride-ios")
+        Attro.configure(Attro.Configuration(
+            organizationSlug: "ride-ios",
+            apiKey: Secrets.attroAppKey
+        ))
     }
 
     var body: some Scene {
@@ -157,8 +197,8 @@ struct RideApp: App {
 
 // Refer-a-Friend View
 struct ReferralView: View {
-    @State private var referral: ReferralInfo?
-    let userId: String
+    @State private var referral: ReferralProgramInfo?
+    let accessToken: String  // fresh upstream bearer token for the logged-in user
 
     var body: some View {
         VStack(spacing: 16) {
@@ -166,29 +206,29 @@ struct ReferralView: View {
                 Text("Your Referral Link")
                     .font(.headline)
 
-                Text(referral.trackingLink.url)
+                Text(referral.shareUrl)
                     .font(.caption)
                     .foregroundColor(.secondary)
 
                 HStack(spacing: 24) {
-                    StatView(value: referral.stats.clicks, label: "Clicks")
-                    StatView(value: referral.stats.conversions.approved, label: "Referrals")
-                    StatView(value: referral.stats.tokens.balance, label: "Tokens")
+                    StatView(value: referral.stats.completed, label: "Referrals")
+                    StatView(value: referral.stats.pending, label: "Pending")
+                    StatView(value: referral.stats.tokenBalance ?? 0, label: "Credits")
                 }
 
-                ShareLink(
-                    item: URL(string: referral.shareContent.url)!,
-                    message: Text(referral.shareContent.text)
-                ) {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                if let shareURL = referral.shareURL {
+                    ShareLink(item: shareURL) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
             } else {
                 ProgressView()
             }
         }
         .task {
-            referral = try? await Attro.getMyReferral(userId: userId)
+            referral = try? await Attro.getReferralProgram(
+                accessToken: accessToken, provider: "ride")
         }
     }
 }
@@ -257,7 +297,7 @@ To receive Universal Links, configure your app:
 ### Configuration
 
 ```swift
-// Basic configuration
+// Basic configuration (no apiKey — referral endpoints disabled)
 Attro.configure(organizationSlug: "your-org")
 
 // With custom base URL (for staging)
@@ -267,12 +307,17 @@ Attro.configure(
 )
 
 // Full configuration
-Attro.configure(Configuration(
+Attro.configure(Attro.Configuration(
     organizationSlug: "your-org",
     baseURL: URL(string: "https://get-attro.com")!,
-    allowedHosts: ["custom.domain.com"]
+    allowedHosts: ["custom.domain.com"],
+    apiKey: "your-per-project-app-key"  // from the Attro admin; enables getReferralProgram
 ))
 ```
+
+`configure` may be called with either form, but it is **last-write-wins**: each
+call replaces the whole configuration, and the convenience overload sets
+`apiKey` to `nil`. Configure once, at launch, with everything you need.
 
 ### Attribution
 
@@ -304,16 +349,29 @@ let stored = await Attro.getStoredAttribution()
 ### Referrals
 
 ```swift
-// Get referral info for a user
-let referral = try await Attro.getMyReferral(userId: "user-uuid")
+// Get referral-program info for the logged-in user. Requires
+// Configuration.apiKey and a FRESH upstream access token; `provider` is the
+// identity-provider slug enrolled for your project in Attro.
+let referral = try await Attro.getReferralProgram(
+    accessToken: session.accessToken,
+    provider: "ride"
+)
 
 // Access referral data
-referral.trackingLink.url      // Shareable URL
-referral.stats.clicks          // Click count
-referral.stats.conversions     // Conversion breakdown
-referral.stats.tokens          // Token balance
-referral.shareContent          // Pre-formatted share content
+referral.code                   // Referral code (e.g. "abc12345")
+referral.shareUrl               // Shareable URL (render a QR from this)
+referral.shareURL               // Same, as a URL? convenience
+referral.stats.completed        // Referrals that reached first paid invoice
+referral.stats.pending          // Attributed but not yet completed
+referral.stats.tokensEarned     // Tokens earned from completed referrals
+referral.stats.tokensPending    // Tokens withheld pending completion
+referral.stats.tokenBalance     // Current spendable balance (Int?; nil on older backends)
+referral.defaultReward          // What a token redeems into (name, tokenCost,
+                                // fulfillmentData.discountPercent), when configured
 ```
+
+`Attro.getMyReferral(userId:orgSlug:)` is **deprecated**: it targets the retired
+`/api/ios/my-affiliate` contract and 401s against current backends.
 
 ### RevenueCat (if available)
 
@@ -326,9 +384,12 @@ Attro.applyToRevenueCat(attribution)
 
 ```swift
 do {
-    let referral = try await Attro.getMyReferral(userId: userId)
+    let referral = try await Attro.getReferralProgram(
+        accessToken: accessToken, provider: "ride")
 } catch AttroError.notConfigured {
     print("Call Attro.configure() first")
+} catch AttroError.missingParameter(let param) {
+    print("Missing \(param) — e.g. no apiKey in the configuration")
 } catch AttroError.serverError(let code, let message, let retryable) {
     print("Server error \(code): \(message ?? "Unknown") (retryable: \(retryable))")
 } catch AttroError.networkError(let error) {
