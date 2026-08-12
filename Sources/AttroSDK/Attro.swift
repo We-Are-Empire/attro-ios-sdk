@@ -24,8 +24,10 @@ import Foundation
 ///     Attro.applyToRevenueCat(attribution)
 /// }
 ///
-/// // 4. Get referral info for logged-in users
-/// let referral = try await Attro.getMyReferral(userId: user.id)
+/// // 4. Get referral-program info for logged-in users (requires apiKey +
+/// //    a fresh upstream access token)
+/// let referral = try await Attro.getReferralProgram(
+///     accessToken: session.accessToken, provider: "ride")
 /// ```
 public enum Attro {
 
@@ -53,6 +55,11 @@ public enum Attro {
     }
 
     /// SDK configuration
+    ///
+    /// Applied atomically by `configure` — each call REPLACES the entire stored
+    /// configuration (last write wins). There is no merging: a later call with a
+    /// partial `Configuration` (e.g. one that leaves `apiKey` nil) discards
+    /// values set by an earlier call.
     public struct Configuration: Sendable {
         /// Organization slug (e.g., "ride-ios")
         public let organizationSlug: String
@@ -101,6 +108,15 @@ public enum Attro {
     }
 
     /// Configure the SDK with default settings
+    ///
+    /// > Warning: `configure` is last-write-wins global state, and this
+    /// > convenience overload builds a ``Configuration`` with `apiKey: nil`
+    /// > (and `allowedHosts: []`). Calling it after a full
+    /// > ``configure(_:)`` silently REPLACES the stored configuration and
+    /// > disables the referral endpoints (`getReferralProgram` will throw
+    /// > `.missingParameter("apiKey")`). If you need `apiKey` or
+    /// > `allowedHosts`, use ``configure(_:)`` with a full ``Configuration``
+    /// > and call it exactly once.
     ///
     /// - Parameter organizationSlug: Your organization's slug (e.g., "ride-ios")
     /// - Parameter baseURL: Optional custom base URL (defaults to production)
@@ -287,13 +303,21 @@ public enum Attro {
 
     /// Get referral information for a logged-in user
     ///
-    /// This returns the user's affiliate profile, tracking link, and stats.
-    /// If the user doesn't have an affiliate record, one is created automatically.
+    /// > Warning: This method targets a RETIRED backend contract. It posts
+    /// > `{rideUserId, orgSlug}` to `/api/ios/my-affiliate` with no `x-api-key`
+    /// > or bearer token, but the current backend requires both (the user is
+    /// > derived from a verified bearer token and a `provider` field is
+    /// > required), so this call returns 401 against every current deployment.
+    /// > Use ``getReferralProgram(accessToken:provider:)`` instead.
+    ///
+    /// This returned the user's affiliate profile, tracking link, and stats.
+    /// If the user didn't have an affiliate record, one was created automatically.
     ///
     /// - Parameter userId: The user's Supabase user ID
     /// - Parameter orgSlug: Optional organization slug (uses configured default)
     /// - Returns: Complete referral information
     /// - Throws: `AttroError` if not configured or request fails
+    @available(*, deprecated, message: "Targets the retired /api/ios/my-affiliate contract and 401s against current backends. Use getReferralProgram(accessToken:provider:) instead.")
     public static func getMyReferral(
         userId: String,
         orgSlug: String? = nil
