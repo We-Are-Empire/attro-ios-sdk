@@ -1,5 +1,6 @@
 // swift-tools-version: 5.9
-// AttroSDK - Lightweight iOS SDK for Attro affiliate tracking
+// AttroSDK - iOS SDK for Attro affiliate attribution
+// (contract: Attro docs/contracts/ios-attribution.md)
 
 import PackageDescription
 
@@ -26,7 +27,8 @@ let package = Package(
         .target(
             name: "AttroSDK",
             dependencies: [],
-            path: "Sources/AttroSDK"
+            path: "Sources/AttroSDK",
+            resources: [.copy("Resources/PrivacyInfo.xcprivacy")]
         ),
         .target(
             name: "AttroRevenueCat",
@@ -34,12 +36,14 @@ let package = Package(
                 "AttroSDK",
                 .product(name: "RevenueCat", package: "purchases-ios-spm"),
             ],
-            path: "Sources/AttroRevenueCat"
+            path: "Sources/AttroRevenueCat",
+            resources: [.copy("Resources/PrivacyInfo.xcprivacy")]
         ),
         .testTarget(
             name: "AttroSDKTests",
             dependencies: ["AttroSDK"],
-            path: "Tests/AttroSDKTests"
+            path: "Tests/AttroSDKTests",
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

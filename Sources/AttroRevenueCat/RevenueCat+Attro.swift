@@ -2,50 +2,51 @@ import Foundation
 import AttroSDK
 import RevenueCat
 
+/// RevenueCat conveniences. Each reads the RevenueCat app user id
+/// (`Purchases.shared.appUserID`), calls the matching `Attro` method, and then
+/// points RevenueCat at ``Attro/currentAttribution()`` by setting exactly one
+/// subscriber attribute, `attro_attribution_id` (contract §4).
+///
+/// RevenueCat must be configured first (`Purchases.configure(...)`); otherwise
+/// these throw ``AttroError/revenueCatNotConfigured`` instead of crashing.
+///
+/// RevenueCat syncs attributes when it is configured, when the app goes to the
+/// background, and when a purchase is made, so an attribute set before the
+/// paywall is presented reaches the purchase event.
 extension Attro {
 
-    /// Apply attribution data to RevenueCat subscriber attributes
-    ///
-    /// Call this after receiving attribution to ensure RevenueCat
-    /// includes the affiliate data in purchase webhooks.
-    ///
-    /// ## Required ordering
-    ///
-    /// RevenueCat **must** be configured (`Purchases.configure(...)`) *before*
-    /// this is called. `Purchases.shared` is a precondition failure if
-    /// `configure` has not run, so this method first checks
-    /// `Purchases.isConfigured`: if RevenueCat is not configured it is a no-op
-    /// (logged), never a crash. Configure RevenueCat at app launch — typically
-    /// in the same place you call `Attro.configure(...)` — so this is safe by the
-    /// time you have attribution.
-    ///
-    /// - Parameter attribution: The attribution data to apply
-    /// - Returns: `true` if the attributes were applied, `false` if RevenueCat
-    ///   was not configured (no-op).
-    ///
-    /// ## Example
-    ///
-    /// ```swift
-    /// // RevenueCat must be configured first.
-    /// Purchases.configure(withAPIKey: "appl_xxx")
-    ///
-    /// // After checking deferred attribution
-    /// if let attribution = try await Attro.checkAttribution() {
-    ///     Attro.applyToRevenueCat(attribution)
-    /// }
-    ///
-    /// // After parsing a Universal Link
-    /// if let attribution = Attro.parseUniversalLink(url) {
-    ///     Attro.storeAttribution(attribution)
-    ///     Attro.applyToRevenueCat(attribution)
-    /// }
-    /// ```
+    /// ``Attro/handleUniversalLink(_:appUserId:)`` for the RevenueCat app
+    /// user, then ``applyCurrentAttributionToRevenueCat()``.
     @discardableResult
-    public static func applyToRevenueCat(_ attribution: AttroSDK.Attribution) -> Bool {
-        // Guard against the precondition crash in `Purchases.shared`: if an
-        // integrator applies attribution before configuring RevenueCat, no-op
-        // and log instead of bringing down the host app. See the required
-        // ordering above.
+    public static func handleUniversalLink(_ url: URL) async throws -> AttributionOutcome? {
+        let outcome = try await handleUniversalLink(url, appUserId: try revenueCatAppUserId())
+        if outcome != nil { await applyCurrentAttributionToRevenueCat() }
+        return outcome
+    }
+
+    /// ``Attro/submitCode(_:appUserId:publicSlug:)`` for the RevenueCat app
+    /// user, then ``applyCurrentAttributionToRevenueCat()``.
+    public static func submitCode(_ code: String, publicSlug: String? = nil) async throws -> AttributionOutcome {
+        let outcome = try await submitCode(code, appUserId: try revenueCatAppUserId(), publicSlug: publicSlug)
+        await applyCurrentAttributionToRevenueCat()
+        return outcome
+    }
+
+    /// ``Attro/matchInstall(appUserId:)`` for the RevenueCat app user, then
+    /// ``applyCurrentAttributionToRevenueCat()``. A no-op unless probabilistic
+    /// matching is configured.
+    @discardableResult
+    public static func matchInstall() async throws -> AttributionOutcome? {
+        let outcome = try await matchInstall(appUserId: try revenueCatAppUserId())
+        if outcome != nil { await applyCurrentAttributionToRevenueCat() }
+        return outcome
+    }
+
+    /// Set `attro_attribution_id` from `result` on RevenueCat.
+    ///
+    /// - Returns: false (a logged no-op) when RevenueCat is not configured.
+    @discardableResult
+    public static func applyToRevenueCat(_ result: AttributionResult) -> Bool {
         guard Purchases.isConfigured else {
             AttroLog.error(
                 "applyToRevenueCat called before Purchases.configure(); skipping. "
@@ -53,36 +54,25 @@ extension Attro {
             )
             return false
         }
-
-        let formatter = ISO8601DateFormatter()
-        let now = formatter.string(from: Date())
-
-        Purchases.shared.attribution.setAttributes([
-            "$rd_click_id": attribution.clickId,
-            "$rd_affiliate_id": attribution.affiliateId,
-            "$rd_offer_id": attribution.offerId,
-            // The backend webhook reads `$rd_project_id`. `$rd_org_id` is kept
-            // transitionally so older backend deployments still receive a value.
-            "$rd_project_id": attribution.projectId,
-            "$rd_org_id": attribution.projectId,
-            "$rd_tracking_code": attribution.trackingCode,
-            "$rd_attributed_at": now
-        ])
+        // Exactly one attribute, and only keys RevenueCat accepts (no `$`).
+        let attributes = result.subscriberAttributes.filter { SubscriberAttributes.isValidKey($0.key) }
+        Purchases.shared.attribution.setAttributes(attributes)
         return true
     }
 
-    /// Apply stored attribution to RevenueCat
+    /// Set `attro_attribution_id` from ``Attro/currentAttribution()``. Call it
+    /// before presenting the paywall, and after
+    /// ``Attro/retryPendingAttributions()``.
     ///
-    /// Convenience method that applies any previously stored attribution.
-    /// Does nothing if no attribution is stored or if RevenueCat is not yet
-    /// configured (see `applyToRevenueCat(_:)` ordering requirements).
-    ///
-    /// - Returns: `true` if stored attribution existed and was applied.
+    /// - Returns: true when there was an attribution and it was applied.
     @discardableResult
-    public static func applyStoredAttributionToRevenueCat() async -> Bool {
-        if let attribution = await getStoredAttribution() {
-            return applyToRevenueCat(attribution)
-        }
-        return false
+    public static func applyCurrentAttributionToRevenueCat() async -> Bool {
+        guard let current = await currentAttribution() else { return false }
+        return applyToRevenueCat(current)
+    }
+
+    private static func revenueCatAppUserId() throws -> String {
+        guard Purchases.isConfigured else { throw AttroError.revenueCatNotConfigured }
+        return Purchases.shared.appUserID
     }
 }

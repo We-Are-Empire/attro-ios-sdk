@@ -1,0 +1,17 @@
+{
+  "affiliate": {"id": "2c9d1e5a-7b3f-4e8a-9d6c-1f2e3a4b5c6d", "type": "internal", "status": "active", "createdAt": "2026-09-01T10:00:00.000Z"},
+  "trackingLink": {
+    "id": "7e6d5c4b-3a2f-4e1d-8c9b-0a1f2e3d4c5b",
+    "code": "abc12345",
+    "url": "https://get-attro.com/a/demo-app/abc12345",
+    "offer": {"id": "4b3a2f1e-0d9c-4b8a-7f6e-5d4c3b2a1f0e", "name": "Premium", "url": "https://example.com/premium"}
+  },
+  "stats": {
+    "clicks": 42,
+    "conversions": {"total": 3, "approved": 2, "pending": 1},
+    "earnings": {"amount": "12.34", "amountMinor": 1234, "currency": "USD"},
+    "earningsFormatted": "$12.34",
+    "tokens": {"balance": 5, "lifetimeEarned": 7}
+  },
+  "shareContent": {"text": "Check out Demo App! Get premium features with my referral link:", "url": "https://get-attro.com/a/demo-app/abc12345"}
+}
