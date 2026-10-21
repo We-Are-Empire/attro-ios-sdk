@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'hardening/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: swift test (macOS) + iOS Simulator build
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Package.resolved is the pinned dependency set; refuse to drift from it.
+      - name: Build
+        run: swift build --force-resolved-versions
+
+      - name: Test
+        run: swift test --force-resolved-versions --parallel
+
+      # Both products (AttroSDK and AttroRevenueCat) must compile for iOS,
+      # the platform apps ship on.
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild build \
+            -scheme AttroSDK-Package \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -n 40
+          test "${PIPESTATUS[0]}" -eq 0
