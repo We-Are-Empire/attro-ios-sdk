@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "token",
+    "expiresAt"
+  ],
+  "additionalProperties": false,
+  "$id": "https://get-attro.com/contracts/device/user-token-response.schema.json"
+}

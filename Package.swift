@@ -1,6 +1,7 @@
 // swift-tools-version: 5.9
 // AttroSDK - iOS SDK for Attro affiliate attribution
-// (contract: Attro docs/contracts/ios-attribution.md)
+// (contract: Attro docs/contracts/device-attribution.md, vendored as
+// Tests/AttroSDKTests/Contract/ by scripts/sync-contract.sh)
 
 import PackageDescription
 
@@ -43,7 +44,7 @@ let package = Package(
             name: "AttroSDKTests",
             dependencies: ["AttroSDK"],
             path: "Tests/AttroSDKTests",
-            resources: [.copy("Fixtures")]
+            resources: [.copy("Fixtures"), .copy("Contract")]
         ),
     ]
 )

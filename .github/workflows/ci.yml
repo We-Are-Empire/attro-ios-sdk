@@ -28,6 +28,12 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # The vendored device contract (scripts/sync-contract.sh) is intact.
+      # ContractTests checks it too; this names a broken copy before a build.
+      - name: Vendored contract matches its checksum list
+        working-directory: Tests/AttroSDKTests/Contract
+        run: shasum -a 256 -c CHECKSUMS.sha256
+
       # Package.resolved is the pinned dependency set; refuse to drift from it.
       - name: Build
         run: swift build --force-resolved-versions

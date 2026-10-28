@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "attributed": {
+          "type": "boolean",
+          "const": true
+        },
+        "attributionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "universal_link",
+            "code",
+            "probabilistic",
+            "install_referrer"
+          ]
+        },
+        "subscriberAttributes": {
+          "type": "object",
+          "properties": {
+            "attro_attribution_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "attro_attribution_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "attributed",
+        "attributionId",
+        "source",
+        "subscriberAttributes"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "attributed": {
+          "type": "boolean",
+          "const": false
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "unknown_link",
+            "unknown_code",
+            "rejected",
+            "no_match",
+            "not_enabled",
+            "no_referrer"
+          ]
+        }
+      },
+      "required": [
+        "attributed",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$id": "https://get-attro.com/contracts/device/attribution-response.schema.json"
+}

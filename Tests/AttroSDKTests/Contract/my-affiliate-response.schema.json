@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "affiliate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "status",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "trackingLink": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "description": "The link on the program's public origin."
+        },
+        "offer": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "url",
+        "offer"
+      ],
+      "additionalProperties": false
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "clicks": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "conversions": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "approved": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "pending": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "approved",
+            "pending"
+          ],
+          "additionalProperties": false
+        },
+        "earnings": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "type": "string",
+              "description": "Decimal string in major units, with the currency exponent (\"12.50\", JPY \"1500\")."
+            },
+            "amountMinor": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "currency": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 3
+            }
+          },
+          "required": [
+            "amount",
+            "amountMinor",
+            "currency"
+          ],
+          "additionalProperties": false,
+          "description": "Earned reward value in the program currency."
+        },
+        "earningsFormatted": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "object",
+          "properties": {
+            "balance": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "lifetimeEarned": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "balance",
+            "lifetimeEarned"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "clicks",
+        "conversions",
+        "earnings",
+        "earningsFormatted",
+        "tokens"
+      ],
+      "additionalProperties": false
+    },
+    "shareContent": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "affiliate",
+    "trackingLink",
+    "stats",
+    "shareContent"
+  ],
+  "additionalProperties": false,
+  "$id": "https://get-attro.com/contracts/device/my-affiliate-response.schema.json"
+}

@@ -1,0 +1,303 @@
+{
+  "contract": "attro-device",
+  "version": "2.2.0",
+  "document": "docs/contracts/device-attribution.md",
+  "sdkHeader": {
+    "name": "X-Attro-SDK",
+    "format": "<platform>/<major>.<minor>.<patch>",
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  },
+  "minimumSdkVersion": {
+    "ios": "2.0.0",
+    "android": "1.0.0"
+  },
+  "upgradeRequired": {
+    "status": 426,
+    "code": "SDK_UPGRADE_REQUIRED",
+    "body": "device-error.schema.json"
+  },
+  "installReferrer": {
+    "linkParam": "attro_link",
+    "clickParam": "attro_click",
+    "requestId": "install-referrer"
+  },
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/app/attribution/link",
+      "aliases": [
+        "/api/ios/attribution/link"
+      ],
+      "auth": "x-api-key",
+      "platforms": [
+        "ios",
+        "android"
+      ],
+      "sdkGated": true,
+      "request": "link-attribution-request.schema.json",
+      "responses": {
+        "200": "attribution-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "426": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "503": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/attribution/code",
+      "aliases": [
+        "/api/ios/attribution/code"
+      ],
+      "auth": "x-api-key",
+      "platforms": [
+        "ios",
+        "android"
+      ],
+      "sdkGated": true,
+      "request": "code-attribution-request.schema.json",
+      "responses": {
+        "200": "attribution-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "426": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "503": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/attribution/install-referrer",
+      "aliases": [],
+      "auth": "x-api-key",
+      "platforms": [
+        "android"
+      ],
+      "sdkGated": true,
+      "request": "install-referrer-attribution-request.schema.json",
+      "responses": {
+        "200": "attribution-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "426": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "503": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/match",
+      "aliases": [
+        "/api/ios/match"
+      ],
+      "auth": "x-api-key",
+      "platforms": [
+        "ios"
+      ],
+      "sdkGated": true,
+      "request": "match-request.schema.json",
+      "responses": {
+        "200": "attribution-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "426": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "503": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/my-affiliate",
+      "aliases": [
+        "/api/ios/my-affiliate"
+      ],
+      "auth": "x-api-key",
+      "alsoRequires": [
+        "bearer-upstream-token"
+      ],
+      "platforms": [
+        "ios",
+        "android"
+      ],
+      "sdkGated": true,
+      "request": "my-affiliate-request.schema.json",
+      "responses": {
+        "200": "my-affiliate-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "403": "device-error.schema.json",
+        "404": "device-error.schema.json",
+        "426": "device-error.schema.json",
+        "500": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/referral/me",
+      "aliases": [
+        "/api/ios/referral/me"
+      ],
+      "auth": "x-api-key",
+      "alsoRequires": [
+        "bearer-upstream-token"
+      ],
+      "platforms": [
+        "ios",
+        "android"
+      ],
+      "sdkGated": true,
+      "request": "referral-me-request.schema.json",
+      "responses": {
+        "200": "referral-me-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "403": "device-error.schema.json",
+        "426": "device-error.schema.json",
+        "500": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/fingerprint",
+      "aliases": [],
+      "auth": "none",
+      "platforms": [
+        "any"
+      ],
+      "sdkGated": false,
+      "request": "fingerprint-request.schema.json",
+      "responses": {
+        "200": "fingerprint-response.schema.json",
+        "400": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "500": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/user-token",
+      "aliases": [],
+      "auth": "x-server-key",
+      "platforms": [
+        "any"
+      ],
+      "sdkGated": false,
+      "request": "user-token-request.schema.json",
+      "responses": {
+        "201": "user-token-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "503": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/affiliate-code",
+      "aliases": [],
+      "auth": "x-server-key",
+      "platforms": [
+        "any"
+      ],
+      "sdkGated": false,
+      "request": "affiliate-code-request.schema.json",
+      "responses": {
+        "200": "affiliate-code-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "429": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/coupon-eligibility",
+      "aliases": [],
+      "auth": "x-server-key",
+      "platforms": [
+        "any"
+      ],
+      "sdkGated": false,
+      "request": "coupon-eligibility-request.schema.json",
+      "responses": {
+        "200": "coupon-eligibility-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "429": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/referral/validate",
+      "aliases": [
+        "/api/ios/referral/validate"
+      ],
+      "auth": "x-server-key",
+      "platforms": [
+        "any"
+      ],
+      "sdkGated": false,
+      "request": "referral-validate-request.schema.json",
+      "responses": {
+        "200": "referral-validate-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "500": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/referral/redeem",
+      "aliases": [
+        "/api/ios/referral/redeem"
+      ],
+      "auth": "x-server-key",
+      "alsoRequires": [
+        "bearer-upstream-token",
+        "idempotency-key-optional"
+      ],
+      "platforms": [
+        "any"
+      ],
+      "sdkGated": false,
+      "request": "referral-redeem-request.schema.json",
+      "responses": {
+        "200": "referral-redeem-response.schema.json",
+        "201": "referral-redeem-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "403": "device-error.schema.json",
+        "404": "device-error.schema.json",
+        "409": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "500": "device-error.schema.json"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/app/referral/redeem/ack",
+      "aliases": [
+        "/api/ios/referral/redeem/ack"
+      ],
+      "auth": "x-server-key",
+      "platforms": [
+        "any"
+      ],
+      "sdkGated": false,
+      "request": "redeem-ack-request.schema.json",
+      "responses": {
+        "200": "redeem-ack-response.schema.json",
+        "400": "device-error.schema.json",
+        "401": "device-error.schema.json",
+        "404": "device-error.schema.json",
+        "409": "device-error.schema.json",
+        "429": "device-error.schema.json",
+        "500": "device-error.schema.json"
+      }
+    }
+  ]
+}

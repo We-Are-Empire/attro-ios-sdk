@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "redemptionId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "refunded": {
+      "type": "boolean"
+    },
+    "tokensRefunded": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "tokenBalance": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "fulfillmentData": {}
+  },
+  "required": [
+    "redemptionId",
+    "status",
+    "refunded",
+    "tokensRefunded",
+    "tokenBalance",
+    "fulfillmentData"
+  ],
+  "additionalProperties": false,
+  "$id": "https://get-attro.com/contracts/device/redeem-ack-response.schema.json"
+}

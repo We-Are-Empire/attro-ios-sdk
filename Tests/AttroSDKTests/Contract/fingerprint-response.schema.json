@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "stored": {
+          "type": "boolean",
+          "const": true
+        },
+        "snapshotId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stored",
+        "snapshotId"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "stored": {
+          "type": "boolean",
+          "const": false
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "not_enabled",
+            "unknown_click",
+            "ip_mismatch",
+            "expired"
+          ]
+        }
+      },
+      "required": [
+        "stored",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$id": "https://get-attro.com/contracts/device/fingerprint-response.schema.json"
+}

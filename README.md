@@ -2,8 +2,9 @@
 
 Swift package for attributing iOS in-app purchases to Attro affiliates.
 
-The wire contract is Attro's `docs/contracts/ios-attribution.md` (the
-"contract" below). This README is the integration checklist around it and
+The wire contract is Attro's `docs/contracts/device-attribution.md` (the
+"contract" below); its machine-readable schemas are vendored in
+`Tests/AttroSDKTests/Contract/` and the tests hold the SDK to them. This README is the integration checklist around it and
 never overrides it.
 
 ## How attribution works
@@ -289,7 +290,7 @@ not an integer, or whose two fields disagree fails to decode
 | `notConfigured` | `Attro.configure` has not run | no |
 | `unauthorized(message:)` | `401`: bad app key or `appUserToken` | no, not with the same token |
 | `rateLimited(retryAfter:)` | `429`, with `Retry-After` seconds | later (kept pending) |
-| `serverError(statusCode:message:retryable:)` | other non-2xx; `503` is retryable | if `retryable` |
+| `serverError(statusCode:message:retryable:)` | other non-2xx; `503` is retryable; `426` means this SDK version is no longer supported (update the package) | if `retryable` |
 | `networkError` | offline, timeout | yes (kept pending) |
 | `decodingError` | response outside the contract | no |
 | `missingParameter` / `invalidParameter` | bad input (empty or too long) | no |
@@ -337,6 +338,33 @@ Mirror these in your App Store Connect privacy answers.
 id).
 
 Run the package's own tests with `swift test`.
+
+## Versioning and the contract
+
+Every request the SDK makes carries `X-Attro-SDK: ios/<version>` (for this
+release `ios/2.0.0`) and calls the device endpoints under `/api/app/*`
+(contract §8). Attro counts the SDK versions each project sees and answers
+`426` `SDK_UPGRADE_REQUIRED` to a version below the oldest one it still
+supports (the SDK logs it), so keep the package within its major version.
+
+`Tests/AttroSDKTests/Contract/` is a copy of Attro's
+`docs/contracts/device/` (the contract manifest, one JSON Schema per request
+and response, and `CHECKSUMS.sha256`). `ContractTests` checks the copy
+against its checksum list, validates every fixture
+(`Tests/AttroSDKTests/Fixtures/fixtures.json` names its endpoint and status)
+and the body of every request the SDK sends against those schemas, and checks
+that every path the SDK calls is a canonical iOS endpoint. To pick up a
+contract change:
+
+```sh
+scripts/sync-contract.sh <path to an Attro checkout>   # copy and verify
+swift test
+scripts/sync-contract.sh --check <path>                # CI-style: fails if the copy is stale
+```
+
+The sync prints the digest of the checksum list; Attro records it in
+`docs/contracts/sdk-pins.json`, and an Attro test fails when Attro's
+contract moves past the copy this SDK vendors.
 
 ## Migrating from 1.x
 

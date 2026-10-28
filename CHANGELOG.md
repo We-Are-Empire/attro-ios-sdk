@@ -6,7 +6,8 @@ All notable changes to AttroSDK. The format follows
 
 ## [2.0.0] - Unreleased
 
-Implements Attro's iOS attribution contract (`docs/contracts/ios-attribution.md`).
+Implements Attro's device attribution contract
+(`docs/contracts/device-attribution.md`, contract version 2.2.0).
 The 1.x contract (`$rd_*` subscriber attributes and client-described
 affiliate, offer and project ids) is gone from the server: 1.x apps attribute
 nothing. There is no backward compatibility.
@@ -28,12 +29,12 @@ nothing. There is no backward compatibility.
   `applyCurrentAttributionToRevenueCat()`.
 - **Deterministic attribution.** `checkAttribution()` (the fingerprint match)
   is removed. Report Universal Link opens with
-  `handleUniversalLink(_:appUserId:)` (`POST /api/ios/attribution/link`) and
+  `handleUniversalLink(_:appUserId:)` (`POST /api/app/attribution/link`) and
   typed codes with `submitCode(_:appUserId:publicSlug:)`
-  (`POST /api/ios/attribution/code`). Every call names the RevenueCat app user
+  (`POST /api/app/attribution/code`). Every call names the RevenueCat app user
   id, to which the attribution is bound.
 - **Probabilistic match is opt-in.** `matchInstall(appUserId:)` calls
-  `/api/ios/match` only when `probabilisticMatching` is on, sends only the
+  `/api/app/match` only when `probabilisticMatching` is on, sends only the
   install id, app user id (and token) and the WebKit User-Agent, and never
   replaces a deterministic attribution. The SDK no longer collects screen
   size, time zone, language or bundle id for matching.
@@ -74,10 +75,19 @@ nothing. There is no backward compatibility.
 - `PrivacyInfo.xcprivacy` privacy manifests for `AttroSDK` and
   `AttroRevenueCat`.
 - `LICENSE` (MIT) and this changelog.
-- Tests against fixtures copied from the Attro contract tests.
+- Tests against fixtures copied from the Attro contract tests, each
+  validated against the contract's JSON Schemas, vendored with a checksum
+  list in `Tests/AttroSDKTests/Contract/` (`scripts/sync-contract.sh`). The
+  body of every request the SDK sends is validated against its endpoint's
+  request schema, and every path it calls is checked against the contract.
+- `X-Attro-SDK: ios/2.0.0` on every request, so Attro can count the SDK
+  versions in use and refuse retired ones (`426 SDK_UPGRADE_REQUIRED`, logged
+  by the SDK and surfaced as a non-retryable `serverError`).
 
 ### Changed
 
+- The device endpoints are called under `/api/app/*`, the contract's
+  canonical paths (`/api/ios/*` are deprecated aliases on the server).
 - Requests use an ephemeral `URLSession` (no cookies, no cache) and the SDK's
   own User-Agent `AttroSDK/2.0.0 (<bundle id>; iOS <version>)`, except the
   opt-in match, which sends the WebKit User-Agent as the contract requires.
