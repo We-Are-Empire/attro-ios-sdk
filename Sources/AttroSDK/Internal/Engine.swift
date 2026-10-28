@@ -10,12 +10,16 @@ actor AttroEngine {
     private let webKitUserAgent: WebKitUserAgentProviding
     private let now: @Sendable () -> Date
 
+    /// The device endpoints the SDK calls: the contract's canonical paths
+    /// (`contract.json`; ContractTests checks each against the vendored copy).
     enum Path {
-        static let link = "/api/ios/attribution/link"
-        static let code = "/api/ios/attribution/code"
-        static let match = "/api/ios/match"
-        static let myAffiliate = "/api/ios/my-affiliate"
-        static let referralMe = "/api/ios/referral/me"
+        static let link = "/api/app/attribution/link"
+        static let code = "/api/app/attribution/code"
+        static let match = "/api/app/match"
+        static let myAffiliate = "/api/app/my-affiliate"
+        static let referralMe = "/api/app/referral/me"
+
+        static let all = [link, code, match, myAffiliate, referralMe]
     }
 
     init(

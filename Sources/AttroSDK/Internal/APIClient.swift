@@ -39,7 +39,8 @@ actor APIClient {
         self.decoder = JSONDecoder()
     }
 
-    /// POST a JSON body and decode the JSON answer.
+    /// POST a JSON body and decode the JSON answer. Every request carries
+    /// `X-Attro-SDK: ios/<sdkVersion>` (contract §8).
     ///
     /// - Parameters:
     ///   - apiKey: the project's app key, sent as `x-api-key`.
@@ -58,6 +59,7 @@ actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(SDKHeader.value, forHTTPHeaderField: SDKHeader.name)
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         if let bearerToken {
             request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
@@ -113,6 +115,15 @@ actor APIClient {
             case 429:
                 let header = http.value(forHTTPHeaderField: "Retry-After").flatMap { TimeInterval($0) }
                 throw AttroError.rateLimited(retryAfter: header ?? body?.retryAfter.map(TimeInterval.init))
+            case 426:
+                // SDK_UPGRADE_REQUIRED: this SDK version is below the server's
+                // minimum. Not retryable; only an app update helps.
+                AttroLog.error(
+                    "AttroSDK \(Attro.sdkVersion) is no longer supported by the server"
+                        + (body?.minimumVersion.map { " (minimum \($0))" } ?? "")
+                        + ". Update the attro-ios-sdk package."
+                )
+                throw AttroError.serverError(statusCode: 426, message: body?.error, retryable: false)
             default:
                 throw AttroError.serverError(
                     statusCode: http.statusCode,

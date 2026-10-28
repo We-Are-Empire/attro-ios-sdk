@@ -62,7 +62,7 @@ extension Attro {
         public let baseURL: URL
 
         /// Whether to call the opt-in probabilistic install match
-        /// (`/api/ios/match`). Off by default. Turn it on only when the project
+        /// (`/api/app/match`). Off by default. Turn it on only when the project
         /// has turned on **Probabilistic install matching** in the Attro admin
         /// and the app shows its users that disclosure (contract §3.3). The
         /// server answers `not_enabled` for a project that has not opted in.

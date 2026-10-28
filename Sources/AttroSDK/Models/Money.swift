@@ -1,6 +1,6 @@
 import Foundation
 
-/// An exact amount of money, as Attro returns it in every `/api/ios/**`
+/// An exact amount of money, as Attro returns it in every `/api/app/**`
 /// response (contract §6):
 ///
 /// ```json

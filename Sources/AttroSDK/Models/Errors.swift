@@ -90,12 +90,17 @@ public enum AttroError: Error, LocalizedError, Sendable {
     }
 }
 
-/// Error response from the API
+/// Error response from the API (the contract's `device-error.schema.json`).
 struct APIErrorResponse: Decodable {
     let error: String?
+    /// Machine-readable code, where the server defines one
+    /// (`SDK_UPGRADE_REQUIRED`, `INVALID_INPUT`).
+    let code: String?
     /// Backend hint that the failure is transient and the request may be
     /// retried with the same ids (`503 { "retryable": true }`).
     let retryable: Bool?
     /// Seconds to wait, echoed in the body of a `429`.
     let retryAfter: Int?
+    /// `426`: the oldest SDK version the server still serves.
+    let minimumVersion: String?
 }

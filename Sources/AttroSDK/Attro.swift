@@ -1,7 +1,7 @@
 import Foundation
 
 /// Attro SDK for iOS affiliate attribution (contract: Attro
-/// `docs/contracts/ios-attribution.md`).
+/// `docs/contracts/device-attribution.md`).
 ///
 /// Attribution is **deterministic first**: the app reports a signal (a
 /// Universal Link it was opened with, a code the user typed) and the server
@@ -174,7 +174,7 @@ public enum Attro {
     // MARK: - Refer-a-friend
 
     /// The signed-in user's affiliate link and stats from
-    /// `POST /api/ios/my-affiliate`. `stats.earnings` is an exact ``Money``.
+    /// `POST /api/app/my-affiliate`. `stats.earnings` is an exact ``Money``.
     ///
     /// - Parameters:
     ///   - accessToken: a fresh access token of the user from your identity
@@ -185,7 +185,7 @@ public enum Attro {
     }
 
     /// The signed-in user's referral-program code, share URL and stats from
-    /// `POST /api/ios/referral/me`.
+    /// `POST /api/app/referral/me`.
     ///
     /// - Parameters:
     ///   - accessToken: a fresh access token of the user from your identity

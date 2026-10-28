@@ -16,12 +16,13 @@ struct UniversalLinkFlowTests {
         let request = try #require(h.server.requests.first)
         #expect(h.server.requests.count == 1)
         #expect(request.method == "POST")
-        #expect(request.url.absoluteString == "https://get-attro.com/api/ios/attribution/link")
+        #expect(request.url.absoluteString == "https://get-attro.com/api/app/attribution/link")
         #expect(request.header("x-api-key") == "app_key_main")
         #expect(request.header("x-server-key") == nil)
         #expect(request.header("Content-Type") == "application/json")
         #expect(request.header("Authorization") == nil)
         #expect(request.header("User-Agent")?.hasPrefix("AttroSDK/\(Attro.sdkVersion) (") == true)
+        #expect(request.header("X-Attro-SDK") == "ios/\(Attro.sdkVersion)")
 
         // Same key set as the contract test's body (fixture), nothing else.
         #expect(request.jsonKeys == Set(Fixture.json("link-request").keys))
@@ -223,7 +224,7 @@ struct TypedCodeFlowTests {
         let outcome = try await h.engine.submitCode("  appcode42 ", appUserId: "rc-typed-user", publicSlug: nil)
 
         let request = try #require(h.server.requests.first)
-        #expect(request.url.path == "/api/ios/attribution/code")
+        #expect(request.url.path == "/api/app/attribution/code")
         #expect(request.header("x-api-key") == "app_key_main")
         #expect(request.jsonKeys == ["code", "installId", "requestId", "appUserId"])
         #expect(request.json["code"] as? String == "appcode42")
@@ -282,7 +283,7 @@ struct ProbabilisticMatchTests {
         let outcome = try await h.engine.matchInstall(appUserId: "rc-user")
 
         let request = try #require(h.server.requests.first)
-        #expect(request.url.path == "/api/ios/match")
+        #expect(request.url.path == "/api/app/match")
         #expect(request.header("x-api-key") == "app_key_main")
         #expect(request.header("User-Agent") == Harness.webKitUA)
         #expect(request.jsonKeys == ["installId", "appUserId"])

@@ -13,7 +13,7 @@ enum WireLimits {
     static let code = 200
 }
 
-/// `POST /api/ios/attribution/link`
+/// `POST /api/app/attribution/link`
 struct LinkAttributionRequest: Encodable, Equatable {
     let url: String
     let installId: String
@@ -22,7 +22,7 @@ struct LinkAttributionRequest: Encodable, Equatable {
     let appUserToken: String?
 }
 
-/// `POST /api/ios/attribution/code`
+/// `POST /api/app/attribution/code`
 struct CodeAttributionRequest: Encodable, Equatable {
     let code: String
     let installId: String
@@ -31,7 +31,7 @@ struct CodeAttributionRequest: Encodable, Equatable {
     let appUserToken: String?
 }
 
-/// `POST /api/ios/match`
+/// `POST /api/app/match`
 struct MatchRequest: Encodable, Equatable {
     let installId: String
     let appUserId: String

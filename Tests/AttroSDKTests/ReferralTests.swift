@@ -10,7 +10,7 @@ struct ReferralTests {
         let info = try await h.engine.getMyAffiliate(accessToken: " upstream-token ", provider: "demo-idp")
 
         let request = try #require(h.server.requests.first)
-        #expect(request.url.path == "/api/ios/my-affiliate")
+        #expect(request.url.path == "/api/app/my-affiliate")
         #expect(request.header("x-api-key") == "app_key_main")
         #expect(request.header("Authorization") == "Bearer upstream-token")
         #expect(request.jsonKeys == ["provider"])
@@ -36,7 +36,7 @@ struct ReferralTests {
         let h = Harness([.fixture(200, "referral-me")])
         let info = try await h.engine.getReferralProgram(accessToken: "tok", provider: "demo-idp")
         let request = try #require(h.server.requests.first)
-        #expect(request.url.path == "/api/ios/referral/me")
+        #expect(request.url.path == "/api/app/referral/me")
         #expect(request.header("x-api-key") == "app_key_main")
         #expect(request.header("Authorization") == "Bearer tok")
         #expect(request.jsonKeys == ["provider"])

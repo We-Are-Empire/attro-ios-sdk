@@ -1,10 +1,10 @@
 import Foundation
 
-/// A user's peer-to-peer referral-program info, returned by `/api/ios/referral/me`.
+/// A user's peer-to-peer referral-program info, returned by `/api/app/referral/me`.
 ///
 /// This is the in-app "invite a friend" surface: the caller gets a shareable
 /// referral `code` + `shareUrl` (render a QR from `shareUrl` on-device) and live
-/// P2P stats. Distinct from ``AffiliateInfo`` (the `/api/ios/my-affiliate`
+/// P2P stats. Distinct from ``AffiliateInfo`` (the `/api/app/my-affiliate`
 /// affiliate profile): this one is scoped to the project's referral *program*
 /// and reports referral completion/pending counts and token rewards.
 public struct ReferralProgramInfo: Codable, Sendable, Equatable {
@@ -93,7 +93,7 @@ extension ReferralProgramInfo {
     public var shareURL: URL? { URL(string: shareUrl) }
 }
 
-/// Request body for `POST /api/ios/referral/me` and `/api/ios/my-affiliate`.
+/// Request body for `POST /api/app/referral/me` and `/api/app/my-affiliate`.
 /// The tenant is resolved server-side from the app key and the user from the
 /// verified bearer token; the body only names the identity provider that
 /// issued the token.

@@ -1,7 +1,7 @@
 import Foundation
 
 /// The signed-in user's affiliate profile, link and stats, returned by
-/// `POST /api/ios/my-affiliate` (contract §6, refer-a-friend).
+/// `POST /api/app/my-affiliate` (contract §6, refer-a-friend).
 ///
 /// The server gets or creates the user's (internal) affiliate. Money is exact:
 /// `stats.earnings` is a ``Money`` object in the program currency, never a
