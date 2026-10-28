@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "valid": {
+      "type": "boolean"
+    },
+    "affiliate": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "displayName": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "displayName"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "discount": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "percentage",
+                    "fixed"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "percent": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "amount": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "description": "Decimal string in major units, with the currency exponent (\"12.50\", JPY \"1500\")."
+                    },
+                    "amountMinor": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 3
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "amountMinor",
+                    "currency"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stripeCouponId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "percent",
+            "amount",
+            "description",
+            "stripeCouponId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attribution": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "couponCodeId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "couponCodeId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "unknown_code",
+        "inactive",
+        "ineligible_customer"
+      ]
+    }
+  },
+  "required": [
+    "valid",
+    "affiliate",
+    "discount",
+    "attribution"
+  ],
+  "additionalProperties": false,
+  "$id": "https://get-attro.com/contracts/device/affiliate-code-response.schema.json"
+}

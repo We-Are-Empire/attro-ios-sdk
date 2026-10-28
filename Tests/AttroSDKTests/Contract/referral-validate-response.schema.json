@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean",
+          "const": true
+        },
+        "referrerAffiliateId": {
+          "type": "string"
+        },
+        "discountCouponId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "discountDisplay": {}
+      },
+      "required": [
+        "valid",
+        "referrerAffiliateId",
+        "discountCouponId",
+        "discountDisplay"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean",
+          "const": false
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "valid",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$id": "https://get-attro.com/contracts/device/referral-validate-response.schema.json"
+}

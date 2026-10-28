@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "eligible": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "already_redeemed",
+        "coupon_unavailable",
+        "unknown_link"
+      ]
+    }
+  },
+  "required": [
+    "eligible"
+  ],
+  "additionalProperties": false,
+  "$id": "https://get-attro.com/contracts/device/coupon-eligibility-response.schema.json"
+}

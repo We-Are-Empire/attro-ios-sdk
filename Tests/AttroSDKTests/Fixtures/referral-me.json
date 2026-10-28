@@ -1,0 +1,6 @@
+{
+  "code": "abc12345",
+  "shareUrl": "https://get-attro.com/a/demo-app/abc12345",
+  "stats": {"completed": 2, "pending": 1, "tokensEarned": 2, "tokensPending": 1, "tokenBalance": 1},
+  "defaultReward": {"id": "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d", "name": "20% off next month", "tokenCost": 1, "fulfillmentData": {"discount_percent": 20, "applies": "next_invoice"}}
+}

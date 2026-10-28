@@ -1,407 +1,206 @@
 import Foundation
 
-/// Attro SDK for iOS affiliate tracking - v1.0
+/// Attro SDK for iOS affiliate attribution (contract: Attro
+/// `docs/contracts/device-attribution.md`).
 ///
-/// Use this SDK to:
-/// - Check for deferred attribution on first app launch
-/// - Parse Universal Links for direct attribution
-/// - Get referral info and share links for logged-in users
-///
-/// ## Quick Start
+/// Attribution is **deterministic first**: the app reports a signal (a
+/// Universal Link it was opened with, a code the user typed) and the server
+/// checks it and stores an attribution row. The app only carries that row's id,
+/// as the RevenueCat subscriber attribute `attro_attribution_id`. App Store
+/// offer codes named after an affiliate's code need no app code at all.
+/// IP + User-Agent matching is an opt-in fallback.
 ///
 /// ```swift
-/// // 1. Configure on app launch
-/// Attro.configure(organizationSlug: "ride-ios")
+/// // 1. At launch, after Purchases.configure(...)
+/// Attro.configure(Attro.Configuration(appKey: "<app key>", publicSlug: "your-program"))
 ///
-/// // 2. Check deferred attribution
-/// if let attribution = try await Attro.checkAttribution() {
-///     Attro.applyToRevenueCat(attribution)
+/// // 2. When the app is opened by a Universal Link (also when already installed)
+/// let outcome = try await Attro.handleUniversalLink(url, appUserId: Purchases.shared.appUserID)
+///
+/// // 3. When the user types an affiliate code
+/// let outcome = try await Attro.submitCode(code, appUserId: Purchases.shared.appUserID)
+///
+/// // 4. Before showing the paywall, point RevenueCat at the attribution
+/// if let current = await Attro.currentAttribution() {
+///     Purchases.shared.attribution.setAttributes(current.subscriberAttributes)
 /// }
-///
-/// // 3. Handle Universal Links
-/// if let attribution = Attro.parseUniversalLink(url) {
-///     Attro.storeAttribution(attribution)
-///     Attro.applyToRevenueCat(attribution)
-/// }
-///
-/// // 4. Get referral-program info for logged-in users (requires apiKey +
-/// //    a fresh upstream access token)
-/// let referral = try await Attro.getReferralProgram(
-///     accessToken: session.accessToken, provider: "ride")
 /// ```
+///
+/// `import AttroRevenueCat` provides one-call wrappers that read the RevenueCat
+/// app user id and set the attribute for you.
 public enum Attro {
+
+    /// This SDK's version.
+    public static let sdkVersion = "2.0.0"
+
+    /// The RevenueCat subscriber attribute key the SDK sets.
+    public static let attributionAttributeKey = SubscriberAttributes.attributionIdKey
 
     // MARK: - Configuration
 
-    private static let storage = AttroStorage()
-
-    /// The shared configuration and API client are mutable global state that is
-    /// written by `configure()` and read from several isolation domains
-    /// (`@MainActor` for `checkAttribution`, non-isolated for
-    /// `parseUniversalLink`/`storeAttribution`). Guard every access behind a lock
-    /// so concurrent `configure()` / first-use never race on the raw statics —
-    /// which strict-concurrency builds flag and which could otherwise surface as
-    /// a transiently `nil` `apiClient`.
     private static let stateLock = NSLock()
-    private nonisolated(unsafe) static var _config: Configuration?
-    private nonisolated(unsafe) static var _apiClient: APIClient?
+    private nonisolated(unsafe) static var _engine: AttroEngine?
 
-    /// Atomically read the current configuration and API client together so a
-    /// caller never observes a half-applied `configure()`.
-    private static func currentState() -> (config: Configuration?, client: APIClient?) {
+    private static func currentEngine() throws -> AttroEngine {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return (_config, _apiClient)
+        guard let engine = _engine else { throw AttroError.notConfigured }
+        return engine
     }
 
-    /// SDK configuration
-    ///
-    /// Applied atomically by `configure` — each call REPLACES the entire stored
-    /// configuration (last write wins). There is no merging: a later call with a
-    /// partial `Configuration` (e.g. one that leaves `apiKey` nil) discards
-    /// values set by an earlier call.
-    public struct Configuration: Sendable {
-        /// Organization slug (e.g., "ride-ios")
-        public let organizationSlug: String
-
-        /// Base URL for the Attro API
-        public let baseURL: URL
-
-        /// Additional hosts to allow for Universal Links
-        public let allowedHosts: [String]
-
-        /// The PER-PROJECT app key (`x-api-key`) for the P2P referral endpoints
-        /// (`/api/ios/referral/*`). Optional — only required if you call
-        /// `getReferralProgram`. Minted in the Attro admin (per project); the
-        /// server resolves your org/project FROM this key, so the SDK never
-        /// sends slugs to the referral endpoints. Server-side secret by nature —
-        /// ship it via your app config, not source control.
-        public let apiKey: String?
-
-        public init(
-            organizationSlug: String,
-            baseURL: URL = URL(string: "https://get-attro.com")!,
-            allowedHosts: [String] = [],
-            apiKey: String? = nil
-        ) {
-            self.organizationSlug = organizationSlug
-            self.baseURL = baseURL
-            self.allowedHosts = allowedHosts
-            self.apiKey = apiKey
-        }
-    }
-
-    /// Configure the SDK
-    ///
-    /// Call this once on app launch, typically in your App's init or AppDelegate.
-    ///
-    /// - Parameter configuration: SDK configuration
+    /// Configure the SDK. Call once at launch. Each call replaces the whole
+    /// configuration (last write wins).
     public static func configure(_ configuration: Configuration) {
-        let client = APIClient(baseURL: configuration.baseURL)
-        stateLock.lock()
-        _config = configuration
-        _apiClient = client
-        stateLock.unlock()
-        Task {
-            await storage.setConfiguredAt(Date())
-        }
-    }
-
-    /// Configure the SDK with default settings
-    ///
-    /// > Warning: `configure` is last-write-wins global state, and this
-    /// > convenience overload builds a ``Configuration`` with `apiKey: nil`
-    /// > (and `allowedHosts: []`). Calling it after a full
-    /// > ``configure(_:)`` silently REPLACES the stored configuration and
-    /// > disables the referral endpoints (`getReferralProgram` will throw
-    /// > `.missingParameter("apiKey")`). If you need `apiKey` or
-    /// > `allowedHosts`, use ``configure(_:)`` with a full ``Configuration``
-    /// > and call it exactly once.
-    ///
-    /// - Parameter organizationSlug: Your organization's slug (e.g., "ride-ios")
-    /// - Parameter baseURL: Optional custom base URL (defaults to production)
-    public static func configure(
-        organizationSlug: String,
-        baseURL: URL = URL(string: "https://get-attro.com")!
-    ) {
-        configure(Configuration(organizationSlug: organizationSlug, baseURL: baseURL))
-    }
-
-    /// Current configuration (nil if not configured)
-    public static var configuration: Configuration? { currentState().config }
-
-    /// Whether the SDK has been configured
-    public static var isConfigured: Bool { currentState().config != nil }
-
-    // MARK: - Deferred Attribution
-
-    /// Check for deferred attribution on first app launch
-    ///
-    /// This method:
-    /// 1. Collects device fingerprint information (including the real device
-    ///    User-Agent so the backend can match on browser family, not IP alone)
-    /// 2. Calls the Attro API to check for a matching click, with bounded retry
-    ///    on transient failures
-    /// 3. Returns attribution data if a match is found
-    ///
-    /// Only runs once per install for a *definitive* answer. If the check fails
-    /// transiently (offline / 5xx flagged `retryable`), the install is NOT marked
-    /// as checked: a durable pending-check flag is persisted so the next launch
-    /// retries instead of permanently losing attribution. Call this on every
-    /// launch — it is a no-op once a definitive answer has been recorded.
-    ///
-    /// - Returns: Attribution data if a match was found, nil otherwise
-    /// - Throws: `AttroError` if not configured or a (post-retry) network error
-    ///   occurs. A thrown retryable error means a retry is durably scheduled.
-    @MainActor
-    public static func checkAttribution() async throws -> Attribution? {
-        guard let client = currentState().client else {
-            throw AttroError.notConfigured
-        }
-
-        // A definitive answer was already recorded — return any stored
-        // attribution without another network call. A still-pending check (from
-        // a prior transient failure) does NOT short-circuit here, so it is
-        // retried on this launch.
-        if await storage.attributionChecked {
-            return await storage.storedAttribution
-        }
-
-        // Collect device info
-        let deviceInfo = DeviceInfo.current
-        let request = MatchRequest(deviceInfo: deviceInfo)
-
-        // Call API, sending the real device User-Agent so the backend matcher
-        // can award browser-family confidence points instead of degrading to an
-        // IP-only match. The APIClient retries transient failures internally.
-        let response: MatchResponse
-        do {
-            response = try await client.post(
-                "/api/ios/match",
-                body: request,
-                userAgent: deviceInfo.userAgent
-            )
-        } catch let error as AttroError where error.isRetryable {
-            // Transient failure after exhausting in-process retries: do NOT mark
-            // as checked. Persist a pending-check flag so the next launch retries
-            // and attribution is not permanently lost.
-            await storage.setPendingCheck(true)
-            throw error
-        }
-
-        // Definitive answer received (match or genuine no-match): record it so we
-        // do not check again, and clear any pending-retry flag.
-        await storage.setAttributionChecked(true)
-        await storage.setPendingCheck(false)
-
-        // If matched, create and store attribution. A successful match must
-        // carry a project id (either the `projectId` key or the legacy `orgId`
-        // fallback); without it we cannot attribute downstream, so treat it as
-        // no attribution rather than fabricating one.
-        guard response.matched,
-              let data = response.attribution,
-              let projectId = data.resolvedProjectId else {
-            return nil
-        }
-
-        // Map the backend match-method string directly from its raw value so
-        // every method (ip_ua_exact / ip_ua_partial / ip_only and the legacy
-        // ip_ua / ip_exact) is preserved instead of collapsing to a default.
-        let matchMethod = response.matchMethod.flatMap(Attribution.MatchMethod.init(rawValue:))
-
-        let attribution = Attribution(
-            clickId: data.clickId,
-            affiliateId: data.affiliateId,
-            offerId: data.offerId,
-            projectId: projectId,
-            trackingCode: data.trackingCode,
-            matchMethod: matchMethod
+        let storage = AttroStorage()
+        let engine = AttroEngine(
+            configuration: configuration,
+            client: APIClient(baseURL: configuration.baseURL),
+            storage: storage,
+            installIds: KeychainInstallIdStore(),
+            webKitUserAgent: WKWebViewUserAgentProvider()
         )
-
-        // Store for future reference. The encode is on a small, known-Codable
-        // value so a failure is not expected, but if it ever happens we surface
-        // it rather than silently returning attribution that was never persisted.
-        do {
-            try await storage.setStoredAttribution(attribution)
-        } catch {
-            AttroLog.error("Failed to persist matched attribution: \(error.localizedDescription)")
-        }
-
-        return attribution
+        install(engine)
+        Task { await storage.purgeLegacyKeys() }
     }
+
+    /// Install an engine (tests inject one with a stub HTTP session).
+    static func install(_ engine: AttroEngine?) {
+        stateLock.lock()
+        _engine = engine
+        stateLock.unlock()
+    }
+
+    /// The current configuration, nil before `configure`.
+    public static var configuration: Configuration? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _engine?.configuration
+    }
+
+    /// Whether the SDK has been configured.
+    public static var isConfigured: Bool { configuration != nil }
 
     // MARK: - Universal Links
 
-    /// Parse a Universal Link URL into attribution data
-    ///
-    /// Call this when your app receives a Universal Link to extract attribution.
-    ///
-    /// - Parameter url: The Universal Link URL
-    /// - Returns: Attribution data if the URL is valid, nil otherwise
-    public static func parseUniversalLink(_ url: URL) -> Attribution? {
-        let allowedHosts = currentState().config?.allowedHosts ?? []
-        return URLParser.parse(url, allowedHosts: allowedHosts)
+    /// Parse `url` as one of this app's Attro Universal Links, without any
+    /// network call. Nil when it is not one (or the SDK is not configured).
+    public static func parseUniversalLink(_ url: URL) -> AttroLink? {
+        guard let configuration,
+              let link = AttroLink(url: url, configuration: configuration),
+              configuration.project(for: link) != nil else {
+            return nil
+        }
+        return link
     }
 
-    /// Check if a URL is an Attro Universal Link
-    ///
-    /// - Parameter url: The URL to check
-    /// - Returns: true if this is an Attro link that should be handled
+    /// Whether `url` is one of this app's Attro Universal Links.
     public static func isAttroLink(_ url: URL) -> Bool {
-        let allowedHosts = currentState().config?.allowedHosts ?? []
-        return URLParser.isAttroLink(url, allowedHosts: allowedHosts)
+        parseUniversalLink(url) != nil
     }
 
-    // MARK: - Attribution Storage
-
-    /// Store attribution data locally, awaiting completion.
-    ///
-    /// Prefer this variant when you intend to read the attribution back (e.g.
-    /// `applyStoredAttributionToRevenueCat()` / `getStoredAttribution()`) right
-    /// after storing it: awaiting guarantees the write has landed, so a
-    /// store-then-read sequence cannot observe a stale/nil value.
-    ///
-    /// - Parameter attribution: The attribution data to store
-    /// - Throws: `AttroError` if the attribution could not be persisted.
-    public static func storeAttribution(_ attribution: Attribution) async throws {
-        do {
-            try await storage.setStoredAttribution(attribution)
-        } catch {
-            throw AttroError.persistenceFailed(error)
-        }
-    }
-
-    /// Store attribution data locally (fire-and-forget).
-    ///
-    /// Use this to persist attribution from Universal Links for later use when
-    /// you do not need to read it back immediately. The write happens on a
-    /// detached task; unlike the previous implementation a failure is **not**
-    /// silently discarded — it is logged via the unified logging system
-    /// (`subsystem == "com.attro.sdk"`). If you need to read the attribution back
-    /// right after storing, use the `async throws` overload and `await` it
-    /// instead so you observe the write completing.
-    ///
-    /// - Parameter attribution: The attribution data to store
-    public static func storeAttribution(_ attribution: Attribution) {
-        Task {
-            do {
-                try await storage.setStoredAttribution(attribution)
-            } catch {
-                AttroLog.error("Failed to store attribution: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    /// Get previously stored attribution data
-    ///
-    /// - Returns: Stored attribution if available
-    public static func getStoredAttribution() async -> Attribution? {
-        await storage.storedAttribution
-    }
-
-    // MARK: - Refer-a-Friend
-
-    /// Get referral information for a logged-in user
-    ///
-    /// > Warning: This method targets a RETIRED backend contract. It posts
-    /// > `{rideUserId, orgSlug}` to `/api/ios/my-affiliate` with no `x-api-key`
-    /// > or bearer token, but the current backend requires both (the user is
-    /// > derived from a verified bearer token and a `provider` field is
-    /// > required), so this call returns 401 against every current deployment.
-    /// > Use ``getReferralProgram(accessToken:provider:)`` instead.
-    ///
-    /// This returned the user's affiliate profile, tracking link, and stats.
-    /// If the user didn't have an affiliate record, one was created automatically.
-    ///
-    /// - Parameter userId: The user's Supabase user ID
-    /// - Parameter orgSlug: Optional organization slug (uses configured default)
-    /// - Returns: Complete referral information
-    /// - Throws: `AttroError` if not configured or request fails
-    @available(*, deprecated, message: "Targets the retired /api/ios/my-affiliate contract and 401s against current backends. Use getReferralProgram(accessToken:provider:) instead.")
-    public static func getMyReferral(
-        userId: String,
-        orgSlug: String? = nil
-    ) async throws -> ReferralInfo {
-        let state = currentState()
-        guard let client = state.client, let config = state.config else {
-            throw AttroError.notConfigured
-        }
-
-        let request = MyAffiliateRequest(
-            rideUserId: userId,
-            orgSlug: orgSlug ?? config.organizationSlug
-        )
-
-        return try await client.post(
-            "/api/ios/my-affiliate",
-            body: request,
-            userAgent: DeviceInfo.sdkUserAgent
-        )
-    }
-
-    // MARK: - P2P Referral Program
-
-    /// Get the current user's peer-to-peer referral info (the in-app "invite a
-    /// friend" screen) from `/api/ios/referral/me`.
-    ///
-    /// Lazily provisions the caller's invisible internal affiliate + a referral
-    /// link on the program's offer, and returns the shareable code + live stats
-    /// (rendered as a QR on-device from `shareUrl`). The referrer earns a token
-    /// once a referred user reaches their first paid invoice.
-    ///
-    /// Two auth gates are required by the backend:
-    ///  - the configured ``Configuration/apiKey`` (`x-api-key`) — the per-project
-    ///    app key. The backend resolves the org/project from it, so no slugs are
-    ///    sent (or accepted) in the request body.
-    ///  - `accessToken`, the user's upstream access token, sent as a bearer. The
-    ///    affiliate identity is derived from the VERIFIED token subject — pass a
-    ///    FRESH, non-expired token.
+    /// Report that the app was opened by `url` (contract §3.1). Call it for
+    /// every open by a link, including when the app is already installed.
     ///
     /// - Parameters:
-    ///   - accessToken: The user's upstream access token (bearer).
-    ///   - provider: Identity-provider slug that issued `accessToken` (as
-    ///     enrolled for the project in Attro, e.g. `"ride"`). REQUIRED with no
-    ///     default — the backend refuses to guess so one tenant can never
-    ///     silently resolve against another tenant's enrolment.
-    /// - Returns: The user's referral code, share URL, and P2P stats.
-    /// - Throws: `AttroError.notConfigured` if the SDK or its `apiKey` is unset,
-    ///   `.missingParameter` for an empty token, or a network/server error.
-    public static func getReferralProgram(
-        accessToken: String,
-        provider: String
-    ) async throws -> ReferralProgramInfo {
-        let state = currentState()
-        guard let client = state.client, let config = state.config else {
-            throw AttroError.notConfigured
-        }
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            // The referral endpoints are gated by the per-project app key; without
-            // it the request can only ever 401, so fail fast with a clear cause.
-            throw AttroError.missingParameter("apiKey")
-        }
-        let token = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else {
-            throw AttroError.missingParameter("accessToken")
-        }
+    ///   - url: the full Universal Link the app received.
+    ///   - appUserId: the RevenueCat app user id now
+    ///     (`Purchases.shared.appUserID`). The attribution is bound to it for
+    ///     good.
+    /// - Returns: nil when `url` is not an Attro link of this app (no request
+    ///   is made); otherwise the server's answer. An attributed answer becomes
+    ///   ``currentAttribution()``.
+    /// - Throws: ``AttroError``. When ``AttroError/isRetryable`` the attempt is
+    ///   kept and ``retryPendingAttributions()`` resends it with the same ids.
+    @discardableResult
+    public static func handleUniversalLink(_ url: URL, appUserId: String) async throws -> AttributionOutcome? {
+        try await currentEngine().handleUniversalLink(url, appUserId: appUserId)
+    }
 
-        let request = ReferralProgramRequest(provider: provider)
+    // MARK: - Typed codes
 
-        return try await client.post(
-            "/api/ios/referral/me",
-            body: request,
-            userAgent: DeviceInfo.sdkUserAgent,
-            apiKey: apiKey,
-            bearerToken: token
-        )
+    /// Report an affiliate code the user typed (contract §3.2). Matching is
+    /// exact and case-insensitive on the server.
+    ///
+    /// - Parameters:
+    ///   - code: the code as typed (surrounding whitespace is trimmed).
+    ///   - appUserId: the RevenueCat app user id now.
+    ///   - publicSlug: the project to resolve the code in, for an app that
+    ///     serves several projects. Nil means the main project.
+    /// - Throws: ``AttroError``; ``AttroError/rateLimited(retryAfter:)`` after
+    ///   10 guesses a minute per install.
+    public static func submitCode(
+        _ code: String,
+        appUserId: String,
+        publicSlug: String? = nil
+    ) async throws -> AttributionOutcome {
+        try await currentEngine().submitCode(code, appUserId: appUserId, publicSlug: publicSlug)
+    }
+
+    // MARK: - Probabilistic match (opt-in)
+
+    /// The opt-in probabilistic install match (contract §3.3). Returns nil
+    /// without any request unless ``Configuration/probabilisticMatching`` is
+    /// on. It is also skipped once the install has a deterministic attribution
+    /// and after a definitive answer. A probabilistic result never replaces a
+    /// deterministic ``currentAttribution()``.
+    ///
+    /// Call it at launch, after `Purchases.configure`. Sends only the install
+    /// id, the app user id (and token) and the app's WebKit User-Agent.
+    @discardableResult
+    public static func matchInstall(appUserId: String) async throws -> AttributionOutcome? {
+        try await currentEngine().matchInstall(appUserId: appUserId)
+    }
+
+    // MARK: - Retry
+
+    /// Resend link and code attempts that failed transiently (offline, `503`,
+    /// `429`), with their original ids, so the server replays them instead of
+    /// counting twice. Call it at launch and when the app becomes active.
+    @discardableResult
+    public static func retryPendingAttributions() async -> [AttributionOutcome] {
+        guard let engine = try? currentEngine() else { return [] }
+        return await engine.retryPendingAttributions()
+    }
+
+    // MARK: - Current attribution
+
+    /// The attribution RevenueCat should point at: the last attributed answer,
+    /// where a probabilistic answer never replaces a deterministic one.
+    public static func currentAttribution() async -> AttributionResult? {
+        guard let engine = try? currentEngine() else { return nil }
+        return await engine.currentAttribution()
+    }
+
+    // MARK: - Refer-a-friend
+
+    /// The signed-in user's affiliate link and stats from
+    /// `POST /api/app/my-affiliate`. `stats.earnings` is an exact ``Money``.
+    ///
+    /// - Parameters:
+    ///   - accessToken: a fresh access token of the user from your identity
+    ///     provider (sent as `Authorization: Bearer`).
+    ///   - provider: the identity-provider slug enrolled for the project.
+    public static func getMyAffiliate(accessToken: String, provider: String) async throws -> AffiliateInfo {
+        try await currentEngine().getMyAffiliate(accessToken: accessToken, provider: provider)
+    }
+
+    /// The signed-in user's referral-program code, share URL and stats from
+    /// `POST /api/app/referral/me`.
+    ///
+    /// - Parameters:
+    ///   - accessToken: a fresh access token of the user from your identity
+    ///     provider (sent as `Authorization: Bearer`).
+    ///   - provider: the identity-provider slug enrolled for the project.
+    public static func getReferralProgram(accessToken: String, provider: String) async throws -> ReferralProgramInfo {
+        try await currentEngine().getReferralProgram(accessToken: accessToken, provider: provider)
     }
 
     // MARK: - Testing / Debug
 
-    /// Reset all stored SDK data
-    ///
-    /// Use this for testing to reset the attribution checked flag
-    /// and clear any stored attribution data.
+    /// Clear the SDK's stored state (current attribution, pending attempts,
+    /// match status). The Keychain install id is kept: it lives as long as
+    /// the install.
     public static func reset() async {
-        await storage.reset()
+        await AttroStorage().reset()
     }
 }

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "string"
+    },
+    "code": {
+      "description": "Machine-readable, where defined (SDK_UPGRADE_REQUIRED, INVALID_INPUT).",
+      "type": "string"
+    },
+    "retryable": {
+      "description": "503: retry the same request (same ids).",
+      "type": "boolean"
+    },
+    "retryAfter": {
+      "description": "429: seconds to wait (also in Retry-After).",
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "minimumVersion": {
+      "description": "426: the oldest SDK version served on this platform.",
+      "type": "string"
+    },
+    "fields": {
+      "description": "400: the invalid fields.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "currentStatus": {
+      "description": "409 on redeem/ack: the redemption status now.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "additionalProperties": false,
+  "$id": "https://get-attro.com/contracts/device/device-error.schema.json"
+}

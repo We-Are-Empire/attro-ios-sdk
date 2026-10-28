@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "linkCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "customerRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "customerRefKind": {
+      "type": "string",
+      "enum": [
+        "upstream_user",
+        "stripe_customer"
+      ]
+    }
+  },
+  "required": [
+    "linkCode",
+    "customerRef",
+    "customerRefKind"
+  ],
+  "$id": "https://get-attro.com/contracts/device/coupon-eligibility-request.schema.json"
+}

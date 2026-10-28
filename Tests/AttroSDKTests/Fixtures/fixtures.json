@@ -1,0 +1,17 @@
+{
+  "link-request": { "endpoint": "/api/app/attribution/link", "request": true },
+  "link-attributed": { "endpoint": "/api/app/attribution/link", "status": 200 },
+  "unknown-link": { "endpoint": "/api/app/attribution/link", "status": 200 },
+  "code-attributed": { "endpoint": "/api/app/attribution/code", "status": 200 },
+  "unknown-code": { "endpoint": "/api/app/attribution/code", "status": 200 },
+  "match-attributed": { "endpoint": "/api/app/match", "status": 200 },
+  "not-enabled": { "endpoint": "/api/app/match", "status": 200 },
+  "unauthorized-app-key-401": { "endpoint": "/api/app/attribution/link", "status": 401 },
+  "unauthorized-token-401": { "endpoint": "/api/app/attribution/link", "status": 401 },
+  "upgrade-required-426": { "endpoint": "/api/app/attribution/link", "status": 426 },
+  "rate-limited-429": { "endpoint": "/api/app/attribution/link", "status": 429 },
+  "retryable-503": { "endpoint": "/api/app/attribution/link", "status": 503 },
+  "my-affiliate-usd": { "endpoint": "/api/app/my-affiliate", "status": 200 },
+  "my-affiliate-jpy": { "endpoint": "/api/app/my-affiliate", "status": 200 },
+  "referral-me": { "endpoint": "/api/app/referral/me", "status": 200 }
+}

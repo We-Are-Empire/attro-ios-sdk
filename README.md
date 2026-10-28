@@ -1,167 +1,117 @@
 # AttroSDK
 
-A lightweight Swift Package for integrating Attro affiliate tracking into iOS apps.
+Swift package for attributing iOS in-app purchases to Attro affiliates.
 
-## Features
+The wire contract is Attro's `docs/contracts/device-attribution.md` (the
+"contract" below); its machine-readable schemas are vendored in
+`Tests/AttroSDKTests/Contract/` and the tests hold the SDK to them. This README is the integration checklist around it and
+never overrides it.
 
-- **Deferred Attribution** - Automatically match users to affiliate clicks on first app launch
-- **Universal Link Handling** - Parse attribution from Universal Links
-- **RevenueCat Integration** - Optional integration to set subscriber attributes
-- **Refer-a-Friend** - Get referral codes, share links, and stats for logged-in users
+## How attribution works
+
+**Deterministic first. The server decides.** The app never tells Attro which
+affiliate, offer or project to credit. It reports a signal, the server checks
+it and stores an attribution row, and the app only carries that row's id to
+RevenueCat as one subscriber attribute, `attro_attribution_id`.
+
+| Signal | When | SDK call |
+|---|---|---|
+| Universal Link | Every open by a link, including when the app is already installed | `Attro.handleUniversalLink` |
+| Typed affiliate code | The user types a code | `Attro.submitCode` |
+| App Store offer code | The user redeems an offer code named after the affiliate's code | none: RevenueCat reports `offer_code` |
+| Probabilistic match (opt-in) | First launch, only if the project opted in | `Attro.matchInstall` |
+
+A probabilistic answer never replaces a deterministic one. A customer's first
+attributed purchase binds the customer to that affiliate for good, and renewals
+pay through their original purchase: the attribute is only a pointer.
 
 ## Requirements
 
-- iOS 15.0+ / macOS 12.0+
-- Swift 5.9+
+- iOS 15.0+ (macOS 12.0+ builds, for tests)
+- Swift 5.9+ / Xcode 15+
+- RevenueCat `purchases-ios` 5.x, if you use the `AttroRevenueCat` product
 
-## Installation
+## Installation (Swift Package Manager)
 
-### Swift Package Manager
+In Xcode: **File → Add Package Dependencies**, enter
+`https://github.com/We-Are-Empire/attro-ios-sdk.git`, choose
+**Up to Next Major Version** from `2.0.0`, and add:
 
-Add AttroSDK to your project via Xcode:
+- `AttroSDK` (always), and
+- `AttroRevenueCat` if the app uses RevenueCat (it brings in `purchases-ios-spm`).
 
-1. File → Add Package Dependencies
-2. Enter the repository URL: `https://github.com/We-Are-Empire/attro-ios-sdk`
-3. Select version and add to your target
-
-Or add to your `Package.swift`:
+Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/We-Are-Empire/attro-ios-sdk", from: "1.0.0")
+    .package(url: "https://github.com/We-Are-Empire/attro-ios-sdk.git", from: "2.0.0"),
+],
+targets: [
+    .target(
+        name: "YourApp",
+        dependencies: [
+            .product(name: "AttroSDK", package: "attro-ios-sdk"),
+            .product(name: "AttroRevenueCat", package: "attro-ios-sdk"),
+        ]
+    ),
 ]
 ```
 
-## Quick Start
+Both products ship a privacy manifest (`PrivacyInfo.xcprivacy`); see
+[Privacy](#privacy).
 
-### 1. Configure the SDK
+## 1. Set up the project in Attro
 
-Configure Attro on app launch:
+In the Attro admin, **Project → Integrations**:
+
+1. **App identity.** Enter your Apple Team ID and bundle ID. A platform admin
+   verifies that you own the App Store app before the identity is published in
+   the AASA file (contract §2). Until then links open Safari, not your app.
+2. **Keys** (contract §1). Generate the **App key** and ship it in the app
+   (`x-api-key`; it authorizes device endpoints only and is assumed
+   extractable). The **Server key** is for your backend only: never put it in
+   the app.
+3. **RevenueCat.** Connect RevenueCat and paste the connection's webhook URL and
+   Authorization key into RevenueCat (**Project settings → Integrations →
+   Webhooks**). Send a test event.
+4. **Probabilistic install matching** stays off unless you accept IP +
+   User-Agent matching and show your users the admin's disclosure (contract
+   §3.3).
+
+Note the project's **public slug** (the `<public_slug>` in its links) and any
+custom link domain.
+
+## 2. Associated Domains
+
+Add the Associated Domains capability with the host your links use:
+
+```
+applinks:get-attro.com          // platform links: https://get-attro.com/a/<public_slug>/<code>
+applinks:go.example.com         // custom domain links: https://go.example.com/r/<code>
+```
+
+On the platform domain your app claims only `/a/<your public_slug>/*`. A
+hand-typed `https://get-attro.com/r/<code>` never opens an app; it records the
+click in the browser. Links are handed out by Attro (portal, admin,
+`AffiliateInfo.trackingLink.url`): never build them by hand.
+
+## 3. Configure at launch
+
+Configure RevenueCat first, then Attro:
 
 ```swift
 import AttroSDK
+import AttroRevenueCat
+import RevenueCat
 
 @main
-struct MyApp: App {
+struct YourApp: App {
     init() {
+        Purchases.configure(withAPIKey: "appl_...")
         Attro.configure(Attro.Configuration(
-            organizationSlug: "ride-ios",
-            apiKey: Secrets.attroAppKey  // per-project app key, from the Attro admin
-        ))
-    }
-
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
-}
-```
-
-`Configuration` fields:
-
-| Field | Required | Purpose |
-|-------|----------|---------|
-| `organizationSlug` | yes | Your organization's slug (e.g. `"ride-ios"`) |
-| `baseURL` | no | Attro API base URL (defaults to `https://get-attro.com`) |
-| `allowedHosts` | no | Additional hosts to accept as Attro Universal Links (e.g. a custom tracking domain) |
-| `apiKey` | for referrals | The **per-project app key** (`x-api-key`), minted in the Attro admin. Required only for the referral-program endpoints (`getReferralProgram`); the server resolves your org/project from it. Treat it as a secret — ship it via your app config, not source control. |
-
-> **Warning:** `configure` is last-write-wins global state — each call replaces
-> the entire stored configuration. The convenience overload
-> `Attro.configure(organizationSlug:baseURL:)` builds a configuration with
-> `apiKey: nil`, so calling it after (or instead of) the full form silently
-> disables the referral endpoints. If you use `apiKey` or `allowedHosts`,
-> configure once with a full `Configuration`.
-
-### 2. Check Deferred Attribution
-
-Call this on **every** launch (not just the first). It runs the network check only
-until a *definitive* answer is recorded; after that it is a cheap no-op that
-returns any stored attribution. If a check fails transiently (offline, or a 5xx
-the backend flags as retryable), the SDK retries in-process with backoff and, if
-that still fails, persists a durable pending-check flag so the **next launch
-retries** instead of permanently losing attribution.
-
-```swift
-Task {
-    do {
-        if let attribution = try await Attro.checkAttribution() {
-            print("Attributed to affiliate: \(attribution.affiliateId)")
-
-            // If using RevenueCat, set attributes
-            Attro.applyToRevenueCat(attribution)
-        }
-    } catch {
-        // A thrown retryable error means a retry is already scheduled for the
-        // next launch — safe to ignore here.
-    }
-}
-```
-
-> The deferred-match request sends the device's real Safari/WebKit User-Agent so
-> the backend can match on browser family. A static User-Agent would degrade
-> every match to IP-only, which no longer auto-attributes by default. It also
-> sends the app's bundle identifier (`Bundle.main.bundleIdentifier`) so the
-> backend can resolve which project the install belongs to.
-
-### 3. Handle Universal Links
-
-Parse attribution from Universal Links:
-
-```swift
-.onOpenURL { url in
-    if let attribution = Attro.parseUniversalLink(url) {
-        Attro.storeAttribution(attribution)
-        Attro.applyToRevenueCat(attribution)
-    }
-}
-```
-
-### 4. Refer-a-Friend
-
-Get a logged-in user's referral code, share link, and stats. This requires
-`Configuration.apiKey` (the per-project app key) plus a **fresh** access token
-from your identity provider — the backend derives the user from the verified
-bearer token, so never pass a cached/expired token:
-
-```swift
-let referral = try await Attro.getReferralProgram(
-    accessToken: session.accessToken,  // fresh upstream bearer token
-    provider: "ride"                   // identity-provider slug enrolled in Attro
-)
-
-// Display stats
-print("Completed referrals: \(referral.stats.completed)")
-print("Pending referrals: \(referral.stats.pending)")
-print("Credits: \(referral.stats.tokenBalance ?? referral.stats.tokensEarned)")
-
-// Describe what a credit is worth (when the project configures it)
-if let reward = referral.defaultReward,
-   let percent = reward.fulfillmentData?.discountPercent {
-    print("Each credit = \(percent)% off")
-}
-
-// Share referral link (render a QR from this URL on-device)
-let url = referral.shareUrl
-```
-
-> The older `Attro.getMyReferral(userId:orgSlug:)` targets a retired backend
-> contract and now returns 401 against every current deployment. It is
-> deprecated — migrate to `getReferralProgram`.
-
-## Complete Integration Example
-
-```swift
-import SwiftUI
-import AttroSDK
-
-@main
-struct RideApp: App {
-    init() {
-        Attro.configure(Attro.Configuration(
-            organizationSlug: "ride-ios",
-            apiKey: Secrets.attroAppKey
+            appKey: AppConfig.attroAppKey,       // the project's App key
+            publicSlug: "your-program",          // the project's public slug
+            customDomains: ["go.example.com"]    // only if you use one
         ))
     }
 
@@ -169,246 +119,268 @@ struct RideApp: App {
         WindowGroup {
             ContentView()
                 .onOpenURL { url in
-                    handleUniversalLink(url)
+                    Task { try? await Attro.handleUniversalLink(url) }
                 }
                 .task {
-                    await checkAttribution()
+                    await Attro.retryPendingAttributions()
+                    await Attro.applyCurrentAttributionToRevenueCat()
+                    _ = try? await Attro.matchInstall()   // no-op unless opted in
                 }
-        }
-    }
-
-    private func handleUniversalLink(_ url: URL) {
-        if let attribution = Attro.parseUniversalLink(url) {
-            Attro.storeAttribution(attribution)
-            Attro.applyToRevenueCat(attribution)
-        }
-    }
-
-    private func checkAttribution() async {
-        do {
-            if let attribution = try await Attro.checkAttribution() {
-                Attro.applyToRevenueCat(attribution)
-            }
-        } catch {
-            print("Attribution check failed: \(error)")
-        }
-    }
-}
-
-// Refer-a-Friend View
-struct ReferralView: View {
-    @State private var referral: ReferralProgramInfo?
-    let accessToken: String  // fresh upstream bearer token for the logged-in user
-
-    var body: some View {
-        VStack(spacing: 16) {
-            if let referral {
-                Text("Your Referral Link")
-                    .font(.headline)
-
-                Text(referral.shareUrl)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 24) {
-                    StatView(value: referral.stats.completed, label: "Referrals")
-                    StatView(value: referral.stats.pending, label: "Pending")
-                    StatView(value: referral.stats.tokenBalance ?? 0, label: "Credits")
-                }
-
-                if let shareURL = referral.shareURL {
-                    ShareLink(item: shareURL) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            } else {
-                ProgressView()
-            }
-        }
-        .task {
-            referral = try? await Attro.getReferralProgram(
-                accessToken: accessToken, provider: "ride")
-        }
-    }
-}
-
-struct StatView: View {
-    let value: Int
-    let label: String
-
-    var body: some View {
-        VStack {
-            Text("\(value)")
-                .font(.title2.bold())
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
         }
     }
 }
 ```
 
-## RevenueCat Integration
+`Configuration`:
 
-If you're using RevenueCat, AttroSDK can automatically set subscriber attributes.
+| Field | Default | Purpose |
+|---|---|---|
+| `appKey` / `project.appKey` | required | The project's App key (`x-api-key`). |
+| `publicSlug` | `nil` | The project's public slug. When nil, any `/a/<slug>/<code>` on the platform host is accepted for this project (the server still resolves the code in the key's project only). |
+| `customDomains` | `[]` | The project's custom link hosts (`/r/<code>` links). |
+| `additionalProjects` | `[]` | Other projects of the same organization this app serves; a link is sent with the key of the project whose slug or domain it carries. |
+| `baseURL` | `https://get-attro.com` | Attro's base URL; its host is the platform link domain. |
+| `probabilisticMatching` | `false` | Call the opt-in probabilistic match (see step 6). |
+| `appUserTokenProvider` | `nil` | User-token mode (see step 7). |
 
-> **Ordering matters.** You must call `Purchases.configure(...)` **before**
-> `Attro.applyToRevenueCat(...)`. If RevenueCat is not yet configured,
-> `applyToRevenueCat` is a logged no-op (it returns `false`) rather than a crash,
-> so attribution is simply dropped. Configure RevenueCat at app launch — in the
-> same place you call `Attro.configure(...)`.
+`configure` is last-write-wins: configure once, with everything.
+
+## 4. Universal Links
+
+Call `handleUniversalLink` for every open by a link, including when the app is
+already installed:
 
 ```swift
-import AttroSDK
-import RevenueCat
+// AttroRevenueCat: uses Purchases.shared.appUserID and sets the attribute.
+let outcome = try await Attro.handleUniversalLink(url)
 
-// 1. Configure RevenueCat first.
-Purchases.configure(withAPIKey: "appl_xxx")
+// AttroSDK only: pass the RevenueCat app user id yourself.
+let outcome = try await Attro.handleUniversalLink(url, appUserId: Purchases.shared.appUserID)
+```
 
-// 2. After getting attribution, apply it. Returns false (no-op) if RevenueCat
-//    was somehow not configured.
-if let attribution = try await Attro.checkAttribution() {
-    Attro.applyToRevenueCat(attribution)
+- Returns `nil` (and sends nothing) when the URL is not one of your Attro links.
+- Otherwise returns `.attributed(AttributionResult)` or
+  `.notAttributed(reason)` (`unknownLink`, `rejected`, ...).
+- UIKit apps: handle `scene(_:continue:)` and, for a cold start,
+  `connectionOptions.userActivities` in `scene(_:willConnectTo:options:)`,
+  passing `userActivity.webpageURL`.
+
+`Attro.parseUniversalLink(url)` / `Attro.isAttroLink(url)` parse without any
+network call.
+
+## 5. Typed codes
+
+```swift
+let outcome = try await Attro.submitCode(codeTextField.text ?? "")
+switch outcome {
+case .attributed: showCodeAccepted()
+case .notAttributed(.unknownCode): showCodeNotFound()
+case .notAttributed: showCodeNotFound()
 }
 ```
 
-This sets the following subscriber attributes:
-- `$rd_click_id`
-- `$rd_affiliate_id`
-- `$rd_offer_id`
-- `$rd_project_id` (and `$rd_org_id` transitionally, for older backends)
-- `$rd_tracking_code`
-- `$rd_attributed_at`
+Matching is exact and case-insensitive on the server. Typed codes are limited to
+10 guesses a minute per install: expect `AttroError.rateLimited(retryAfter:)`.
 
-## Universal Links Setup
+App Store **offer codes** need no app code: name the offer code so that the
+identifier RevenueCat reports as `offer_code` equals the affiliate's code.
 
-To receive Universal Links, configure your app:
+## 6. Probabilistic install match (opt-in)
 
-1. **Add Associated Domains** in your app's entitlements:
-   ```
-   applinks:get-attro.com
-   ```
-
-2. **Handle incoming URLs** using SwiftUI's `onOpenURL` or UIKit's scene delegate
-
-## API Reference
-
-### Configuration
+Only when the project turned on **Probabilistic install matching** and your app
+shows the disclosure:
 
 ```swift
-// Basic configuration (no apiKey — referral endpoints disabled)
-Attro.configure(organizationSlug: "your-org")
+Attro.configure(Attro.Configuration(appKey: ..., publicSlug: ..., probabilisticMatching: true))
+_ = try? await Attro.matchInstall()   // at launch
+```
 
-// With custom base URL (for staging)
-Attro.configure(
-    organizationSlug: "your-org",
-    baseURL: URL(string: "https://staging.get-attro.com")!
-)
+The SDK sends only the install id, the app user id (and token) and the app's
+WebKit User-Agent (read once from `WKWebView` and cached per OS version). It
+collects no screen size, time zone or language. The match runs once per install
+and is skipped when the install already has a deterministic attribution. On a
+shared public IP it can credit the wrong affiliate: the admin disclosure says
+so.
 
-// Full configuration
+## 7. RevenueCat attribute and app user ids
+
+Exactly one attribute is set: `attro_attribution_id` = the id of the current
+attribution (contract §4). Set it **before presenting the paywall**; RevenueCat
+syncs attributes on configure, on backgrounding and on purchase.
+
+```swift
+await Attro.applyCurrentAttributionToRevenueCat()   // AttroRevenueCat
+
+// or, by hand:
+if let current = await Attro.currentAttribution() {
+    Purchases.shared.attribution.setAttributes(current.subscriberAttributes)
+}
+```
+
+Every attribution is bound for good to the RevenueCat app user id at the time
+of the touch, and only a purchase by that user (or its aliases) is attributed.
+
+- Use unguessable app user ids (RevenueCat's anonymous ids or random UUIDs),
+  never sequential ids or emails.
+- If your app user ids are your own account ids or emails, turn on
+  **user-token mode** for the project. Your backend gets a token for the
+  signed-in user from `POST /api/app/user-token` (Server key,
+  `{ appUserId }`, valid one hour), and the SDK sends it:
+
+```swift
 Attro.configure(Attro.Configuration(
-    organizationSlug: "your-org",
-    baseURL: URL(string: "https://get-attro.com")!,
-    allowedHosts: ["custom.domain.com"],
-    apiKey: "your-per-project-app-key"  // from the Attro admin; enables getReferralProgram
+    appKey: ..., publicSlug: ...,
+    appUserTokenProvider: { appUserId in
+        try await YourBackend.attroUserToken(for: appUserId)   // never cache past expiry
+    }
 ))
 ```
 
-`configure` may be called with either form, but it is **last-write-wins**: each
-call replaces the whole configuration, and the convenience overload sets
-`apiKey` to `nil`. Configure once, at launch, with everything you need.
+A `401` (`AttroError.unauthorized`) means a missing, expired or foreign token or
+key: do not retry with the same token.
 
-### Attribution
+## 8. Retries
 
-```swift
-// Check deferred attribution. Call this on EVERY launch — it performs the
-// network check only until a definitive matched/no-match answer is recorded,
-// then becomes a cheap no-op. A transient failure is retried on a later launch,
-// so it is not strictly "once per install".
-let attribution = try await Attro.checkAttribution()
+A transient failure (offline, `503 { retryable: true }`, `429`) throws an error
+whose `isRetryable` is true. The SDK keeps the attempt with its original
+`requestId`, so resending it replays the server's answer instead of recording a
+second click. Call `Attro.retryPendingAttributions()` at launch and when the
+app becomes active, then `applyCurrentAttributionToRevenueCat()`.
 
-// Parse Universal Link
-let attribution = Attro.parseUniversalLink(url)
+## 9. Refer-a-friend
 
-// Check if URL is an Attro link
-let isAttroLink = Attro.isAttroLink(url)
-
-// Store attribution for later use. Prefer the awaitable variant when you read
-// it back immediately afterwards (e.g. applyStoredAttributionToRevenueCat):
-try await Attro.storeAttribution(attribution)
-
-// Fire-and-forget variant (write happens in the background; failures are logged
-// to the unified log under subsystem "com.attro.sdk", not silently dropped):
-Attro.storeAttribution(attribution)
-
-// Get stored attribution
-let stored = await Attro.getStoredAttribution()
-```
-
-### Referrals
+Needs an identity provider enrolled for the project (**Admin → Login
+providers**) and a fresh access token of the signed-in user.
 
 ```swift
-// Get referral-program info for the logged-in user. Requires
-// Configuration.apiKey and a FRESH upstream access token; `provider` is the
-// identity-provider slug enrolled for your project in Attro.
-let referral = try await Attro.getReferralProgram(
-    accessToken: session.accessToken,
-    provider: "ride"
-)
+let me = try await Attro.getMyAffiliate(accessToken: session.accessToken, provider: "your-idp")
+me.trackingLink.url                 // the Universal Link to share
+me.stats.earnings                   // Money: exact, in the program currency
+me.stats.earningsFormatted          // the server's display string, e.g. "$12.50"
+me.shareContent.text
 
-// Access referral data
-referral.code                   // Referral code (e.g. "abc12345")
-referral.shareUrl               // Shareable URL (render a QR from this)
-referral.shareURL               // Same, as a URL? convenience
-referral.stats.completed        // Referrals that reached first paid invoice
-referral.stats.pending          // Attributed but not yet completed
-referral.stats.tokensEarned     // Tokens earned from completed referrals
-referral.stats.tokensPending    // Tokens withheld pending completion
-referral.stats.tokenBalance     // Current spendable balance (Int?; nil on older backends)
-referral.defaultReward          // What a token redeems into (name, tokenCost,
-                                // fulfillmentData.discountPercent), when configured
+let program = try await Attro.getReferralProgram(accessToken: session.accessToken, provider: "your-idp")
+program.shareUrl                    // render a QR from this
+program.stats.tokenBalance          // "N credits"
+program.defaultReward?.fulfillmentData?.discountPercent
 ```
 
-`Attro.getMyReferral(userId:orgSlug:)` is **deprecated**: it targets the retired
-`/api/ios/my-affiliate` contract and 401s against current backends.
+Redeeming a credit is a backend call with the Server key (contract §7), never
+from the app.
 
-### RevenueCat (if available)
+## Money
 
-```swift
-// Apply attribution to RevenueCat
-Attro.applyToRevenueCat(attribution)
+Every amount the SDK decodes is a `Money` value, never a `Double`:
+
+```json
+{ "amount": "12.50", "amountMinor": 1250, "currency": "USD" }
 ```
 
-## Error Handling
+`Money.amount` is an exact `Decimal` parsed from the string,
+`amountMinor` an `Int64`, and `minorUnitExponent` the digits the server used
+(0 for JPY). A payload whose `amount` is a JSON number, whose `amountMinor` is
+not an integer, or whose two fields disagree fails to decode
+(`AttroError.decodingError`). Display with `earningsFormatted` or
+`Money.formatted(locale:)`.
 
-```swift
-do {
-    let referral = try await Attro.getReferralProgram(
-        accessToken: accessToken, provider: "ride")
-} catch AttroError.notConfigured {
-    print("Call Attro.configure() first")
-} catch AttroError.missingParameter(let param) {
-    print("Missing \(param) — e.g. no apiKey in the configuration")
-} catch AttroError.serverError(let code, let message, let retryable) {
-    print("Server error \(code): \(message ?? "Unknown") (retryable: \(retryable))")
-} catch AttroError.networkError(let error) {
-    print("Network error: \(error)")
-}
-```
+## Errors
+
+| Error | Meaning | Retry? |
+|---|---|---|
+| `notConfigured` | `Attro.configure` has not run | no |
+| `unauthorized(message:)` | `401`: bad app key or `appUserToken` | no, not with the same token |
+| `rateLimited(retryAfter:)` | `429`, with `Retry-After` seconds | later (kept pending) |
+| `serverError(statusCode:message:retryable:)` | other non-2xx; `503` is retryable; `426` means this SDK version is no longer supported (update the package) | if `retryable` |
+| `networkError` | offline, timeout | yes (kept pending) |
+| `decodingError` | response outside the contract | no |
+| `missingParameter` / `invalidParameter` | bad input (empty or too long) | no |
+| `appUserTokenUnavailable` | your token provider threw | yes |
+| `revenueCatNotConfigured` | `AttroRevenueCat` called before `Purchases.configure` | no |
+
+## Privacy
+
+`AttroSDK` ships `PrivacyInfo.xcprivacy`:
+
+- **Collected, linked to the user, not used for tracking:** Device ID (the
+  install id: a random UUID the SDK creates and keeps in the Keychain,
+  this device only; not the IDFA and not derived from device properties), User
+  ID (the RevenueCat app user id, and the user token in user-token mode;
+  refer-a-friend sends the user's access token), Product Interaction (that a
+  link was opened or a code typed). Purposes: developer's marketing (affiliate
+  attribution) and app functionality (refer-a-friend).
+- **Tracking:** `NSPrivacyTracking` is false and the SDK contacts no tracking
+  domain. It does not read the IDFA and needs no App Tracking Transparency
+  prompt.
+- **Required-reason API:** UserDefaults (`CA92.1`) for the SDK's own state.
+- **No fingerprinting:** no screen size, time zone, locale, boot time, disk
+  space, keyboards or file timestamps. The opt-in probabilistic match (off by
+  default) sends the WebKit User-Agent; the server compares it and the request
+  IP with a click on the tenant's download page. If you turn it on, review your
+  App Store privacy answers and disclosure.
+
+`AttroRevenueCat` collects nothing itself.
+
+Mirror these in your App Store Connect privacy answers.
 
 ## Testing
 
-For testing, you can reset the SDK state:
+1. **Universal Link:** open a platform link on a device with the app installed.
+   `handleUniversalLink` returns `.attributed` with `source == .universalLink`,
+   and RevenueCat shows `attro_attribution_id` on the customer.
+2. **Typed code:** submit an affiliate code; expect `source == .code`.
+3. **Purchase:** make a sandbox purchase (Attro records sandbox conversions
+   only in environments with `ALLOW_SANDBOX_CONVERSIONS=true`).
+4. **Links open Safari:** check the app identity is verified, the entitlement
+   names the link's host, and
+   `https://<host>/.well-known/apple-app-site-association` lists your app ID.
 
-```swift
-await Attro.reset()
+`await Attro.reset()` clears the SDK's stored state (not the Keychain install
+id).
+
+Run the package's own tests with `swift test`.
+
+## Versioning and the contract
+
+Every request the SDK makes carries `X-Attro-SDK: ios/<version>` (for this
+release `ios/2.0.0`) and calls the device endpoints under `/api/app/*`
+(contract §8). Attro counts the SDK versions each project sees and answers
+`426` `SDK_UPGRADE_REQUIRED` to a version below the oldest one it still
+supports (the SDK logs it), so keep the package within its major version.
+
+`Tests/AttroSDKTests/Contract/` is a copy of Attro's
+`docs/contracts/device/` (the contract manifest, one JSON Schema per request
+and response, and `CHECKSUMS.sha256`). `ContractTests` checks the copy
+against its checksum list, validates every fixture
+(`Tests/AttroSDKTests/Fixtures/fixtures.json` names its endpoint and status)
+and the body of every request the SDK sends against those schemas, and checks
+that every path the SDK calls is a canonical iOS endpoint. To pick up a
+contract change:
+
+```sh
+scripts/sync-contract.sh <path to an Attro checkout>   # copy and verify
+swift test
+scripts/sync-contract.sh --check <path>                # CI-style: fails if the copy is stale
 ```
+
+The sync prints the digest of the checksum list; Attro records it in
+`docs/contracts/sdk-pins.json`, and an Attro test fails when Attro's
+contract moves past the copy this SDK vendors.
+
+## Migrating from 1.x
+
+2.0 implements the current contract; the 1.x contract no longer exists on the
+server. See [CHANGELOG.md](CHANGELOG.md) for every change. In short:
+
+- `Configuration(organizationSlug:...)` → `Configuration(appKey:publicSlug:...)`.
+- `checkAttribution()` (fingerprint match) → deterministic
+  `handleUniversalLink` / `submitCode`, plus opt-in `matchInstall()`.
+- `parseUniversalLink(url)` returns an `AttroLink` (no client-side affiliate
+  ids); report it with `handleUniversalLink`.
+- `applyToRevenueCat(Attribution)` with `$rd_*` attributes →
+  `applyCurrentAttributionToRevenueCat()` setting `attro_attribution_id`.
+- `getMyReferral(userId:orgSlug:)` → `getMyAffiliate(accessToken:provider:)`,
+  with `stats.earnings` as `Money`.
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Support
-
-For issues and feature requests, please open an issue on GitHub.
+MIT. See [LICENSE](LICENSE).

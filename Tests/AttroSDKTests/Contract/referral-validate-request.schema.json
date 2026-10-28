@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "refereeUpstreamUserId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "campaign": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "$id": "https://get-attro.com/contracts/device/referral-validate-request.schema.json"
+}
