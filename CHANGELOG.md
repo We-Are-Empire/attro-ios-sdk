@@ -4,7 +4,7 @@ All notable changes to AttroSDK. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package uses
 [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-10-28
 
 Implements Attro's device attribution contract
 (`docs/contracts/device-attribution.md`, contract version 2.2.0).

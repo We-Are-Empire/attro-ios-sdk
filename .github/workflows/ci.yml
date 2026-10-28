@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main, 'hardening/**']
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:
 
 permissions:
@@ -22,6 +23,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+
+      # The X-Attro-SDK header sends Attro.sdkVersion: a release tag must equal
+      # it, and the CHANGELOG must have a section for it.
+      - name: Version matches the tag and the CHANGELOG
+        run: |
+          version=$(sed -nE 's/.*public static let sdkVersion = "([^"]+)".*/\1/p' Sources/AttroSDK/Attro.swift)
+          test -n "$version" || { echo "sdkVersion not found"; exit 1; }
+          grep -q "^## \[$version\]" CHANGELOG.md || { echo "CHANGELOG has no section for $version"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Attro.sdkVersion $version"; exit 1
+          fi
+          echo "sdkVersion $version"
 
       - name: Toolchain
         run: |
